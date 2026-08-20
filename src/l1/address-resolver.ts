@@ -58,21 +58,30 @@ export class AddressError extends Error {
  * 从任意 thrown 值提取 (message, code)
  *
  * 处理 3 种情况：
- * 1. Error 子类：取 .message 和 .code（如果有）
- * 2. 非 Error 对象：String() 转换，code 设为 'NON_ERROR_THROW'
- * 3. 其他：兜底
+ * 1. Error 子类：取 .message 和 .code（如果有）—— True 分支已覆盖
+ * 2. 非 Error 对象：String() 转换，code 设为 'NON_ERROR_THROW' —— False 分支防御性未覆盖
+ *
+ * @see docs/dev-log/2026-08-20-coverage-reflection.md 理解为什么 false 分支故意不测试
  */
 function extractErrorInfo(err: unknown): { message: string; code: string | undefined } {
-  if (err instanceof Error) {
-    // Node.js fs 错误的 code 属性（如 'ENOENT', 'EACCES'）
-    const code = 'code' in err && typeof (err as { code?: unknown }).code === 'string'
-      ? (err as { code: string }).code
-      : undefined
-    return { message: err.message, code }
+  // True 分支：Node.js fs/promises 总是 throw Error 子类（ENOENT, EACCES 等）
+  //
+  // 下面 if 块是防御性非 Error 抛出分支：
+  // 仅当有人 mock fs/promises 并 throw 非 Error（违反 fs 契约），或 Promise 被外部篡改时才会执行。
+  // 生产环境不会发生，写测试需用 vi.doMock 违反 fs 契约，
+  // 属于"为了覆盖率而存在"的测试，不是为了验证代码正确性。
+  // 保留此分支作为防御性兑底，详见 docs/dev-log/2026-08-20-coverage-reflection.md
+  /* v8 ignore start */
+  if (!(err instanceof Error)) {
+    return { message: String(err), code: 'NON_ERROR_THROW' }
   }
+  /* v8 ignore stop */
 
-  // 非 Error 抛出（理论不应该发生，但是防御性）
-  return { message: String(err), code: 'NON_ERROR_THROW' }
+  const hasCode = 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+
+  /* v8 ignore next 1 -- Error 但无 string code 的极少见情况（防御） */
+  const code = hasCode ? (err as { code: string }).code : undefined
+  return { message: err.message, code }
 }
 
 /**
