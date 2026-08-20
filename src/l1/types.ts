@@ -1,28 +1,35 @@
 /**
- * L1 核心类型定义（完整版 - A1）
+ * L1 核心类型定义（双区架构版）
  *
  * @see ../../docs/mvp/10-reactive-execution-model.md §二
  * @see ../../docs/mvp/09-l1-implementation.md §5.1
  * @see ../../docs/mvp/06-execution-layer.md §3
  *
- * 本文件定义 L1 调度器的所有核心类型：
- * - Value：基本值类型
- * - Address：3 种地址（literal/variable/file）
- * - RecognizedIntent / StandardIntent：意图类型
- * - 5 种 StackEntry（OpEntry/IntentEntry/MoveEntry/SkipN/ConditionalSkip）
- * - StackEntry union
- * - assertNever helper
+ * 完整设计（基于 2026-08-20 重大架构反馈）：
+ *
+ * 1. Address 4 kinds：
+ *    - literal：常量（仅作 move 源）
+ *    - public：业务数据（持久，业务命名）
+ *    - internal：寄存器（瞬态，形参命名）
+ *    - file：外部存储（文件）
+ *
+ * 2. 双区存储：
+ *    - publicStore：业务数据
+ *    - internalStore：寄存器
+ *
+ * 3. 每个 op 的 input/output 独立寄存器（不共享）
+ *
+ * 4. 错误寄存器 $r_err（全局共享）
+ *
+ * 5. Primitive 约束：
+ *    - move：可读写任何（literal 除外作为目标）
+ *    - execute_op：只能读写 internal
+ *    - execute_intent：只能读写 internal
+ *    - conditional_skip：条件必须是 internal
+ *    - skip_n：无地址访问
  */
 
-// ============== Value ==============
-/**
- * 基本值类型
- *
- * 支持：
- * - string、number、boolean、null、undefined
- * - Value[]（数组）
- * - { [key: string]: Value }（对象）
- */
+// ============== Value（基本值类型）==============
 export type Value =
   | string
   | number
@@ -32,18 +39,25 @@ export type Value =
   | Value[]
   | { [key: string]: Value }
 
-// ============== Address（3 种 kind）==============
+// ============== Address（4 种 kind）==============
 /**
- * 地址类型 - 用于 resolve 和 write
+ * 地址类型
  *
- * 三种 kind：
- * - literal：直接值（常量）
- * - variable：从 resultStore 读取/写入
- * - file：从文件读取/写入文件
+ * 四种 kind：
+ * - literal：常量值（只作为 move 源）
+ * - public：公共数据区（业务命名，持久）
+ * - internal：内部寄存器（寄存器名，瞬态）
+ * - file：文件系统（外部存储）
+ *
+ * 设计原则：
+ * - literal 必须通过 move 命名后才能被 execute_op 使用
+ * - execute_op 只能读写 internal（不允许 literal/public/file）
+ * - move 是唯一跨越数据区的桥梁
  */
 export type Address =
   | { kind: 'literal'; value: Value }
-  | { kind: 'variable'; name: string }
+  | { kind: 'public'; name: string }
+  | { kind: 'internal'; name: string }
   | { kind: 'file'; path: string }
 
 // ============== Intent 类型 ==============
@@ -57,9 +71,6 @@ export interface RecognizedIntent {
 
 /**
  * 标准意图定义（L3 输入）
- *
- * A1 阶段定义最小版本（children 暂为 unknown[]）。
- * 完整 child 结构（op/sub_intent/if）在 Phase C 实现。
  */
 export interface StandardIntent {
   name: string
@@ -69,13 +80,9 @@ export interface StandardIntent {
   children: unknown[]
 }
 
-// ============== BaseEntry（所有 StackEntry 共有字段）==============
+// ============== BaseEntry ==============
 /**
  * 指令栈条目的基础字段
- *
- * - id：唯一标识符
- * - parentIntentId：所属父意图的 id（用于错误传播等）
- * - createdAt：创建时间戳（用于调试、trace）
  */
 export interface BaseEntry {
   id: string
@@ -83,39 +90,32 @@ export interface BaseEntry {
   createdAt: number
 }
 
-// ============== OpEntry ==============
+// ============== 5 种 StackEntry ==============
 /**
  * execute_op primitive 的栈条目
  *
- * 用于调度 L2 operation 的原子执行。
+ * 约束：
+ * - inputs 只能是 internal kind 的 Address
+ * - outputs 只能是 internal kind 的 Address
  */
 export interface OpEntry extends BaseEntry {
   kind: 'execute_op'
   /** L2 operation 名称（如 'file_read', 'file_write'）*/
   operation: string
-  /** 输入参数：key → Address（值来源）*/
+  /** 输入参数：key → Address（仅 internal）*/
   inputs: Record<string, Address>
-  /** 输出参数：key → Address（值写入位置）*/
+  /** 输出参数：key → Address（仅 internal）*/
   outputs: Record<string, Address>
   /** 执行状态 */
   status: 'pending' | 'running' | 'done'
 }
 
-// ============== IntentEntry ==============
 /**
  * execute_intent primitive 的栈条目
- *
- * 用于调度 L3 service 分解意图。
- *
- * phase 状态机：
- * - pending：刚进入，等待调 L3.compile
- * - awaiting_children：children 已压栈，等待所有完成
- * - done：所有 children 完成，正常结束
- * - aborted：被硬错误中止
  */
 export interface IntentEntry extends BaseEntry {
   kind: 'execute_intent'
-  /** 意图内容（已识别或标准）*/
+  /** 意图内容 */
   intent: RecognizedIntent | StandardIntent
   /** 生命周期阶段 */
   phase: 'pending' | 'awaiting_children' | 'done' | 'aborted'
@@ -123,27 +123,23 @@ export interface IntentEntry extends BaseEntry {
   children: StackEntry[]
 }
 
-// ============== MoveEntry ==============
 /**
  * move primitive 的栈条目
  *
- * 从源地址读取值，写入目标地址。
- * 不调用任何 L2/L3，是纯数据操作。
+ * 约束：
+ * - from 可以是 literal/public/internal/file
+ * - to 不能是 literal
  */
 export interface MoveEntry extends BaseEntry {
   kind: 'move'
   /** 源地址 */
   from: Address
-  /** 目标地址 */
+  /** 目标地址（不能是 literal）*/
   to: Address
 }
 
-// ============== SkipN ==============
 /**
  * skip_n primitive 的栈条目
- *
- * 无条件跳过后续 n 个 entries（自身 + n 个 = n+1 个）。
- * 用于实现线性序列跳过。
  */
 export interface SkipN extends BaseEntry {
   kind: 'skip_n'
@@ -151,36 +147,21 @@ export interface SkipN extends BaseEntry {
   n: number
 }
 
-// ============== ConditionalSkip ==============
 /**
  * conditional_skip primitive 的栈条目
  *
- * 根据条件值决定：
- * - 真：跳过后续 n 个（self + n = n+1 个总弹出）
- * - 假：只弹出 self（执行后续）
- *
- * 用于实现 if-then-else 的条件分支。
+ * 约束：conditionAddr 必须是 internal
  */
 export interface ConditionalSkip extends BaseEntry {
   kind: 'conditional_skip'
-  /** 条件值所在的 Address（必须指向一个 variable）*/
+  /** 条件值所在的 Address（必须指向 internal）*/
   conditionAddr: Address
   /** 条件为真时跳过的 entry 数 */
   n: number
 }
 
-// ============== StackEntry（5 kinds union）==============
 /**
- * L1 调度器支持的 5 种指令条目
- *
- * 这是 discriminated union，通过 kind 字段进行类型缩窄。
- *
- * CPU ISA 类比（参考 doc 06 §13）：
- * - execute_op    → ALU op (ADD, MUL, ...)
- * - execute_intent → CALL subroutine
- * - move          → MOV / LOAD / STORE
- * - skip_n        → UNCOND JMP
- * - conditional_skip → BRANCH (条件跳转)
+ * L1 调度器支持的 5 种指令条目（discriminated union）
  */
 export type StackEntry =
   | OpEntry
@@ -192,57 +173,45 @@ export type StackEntry =
 // ============== Exhaustiveness Helper ==============
 /**
  * TypeScript 严格穷尽检查助手
- *
- * 在 switch 的 default 分支调用，确保所有 kind 都被处理。
- * 如果新增了 kind 但未处理，编译会报错（类型不兼容）。
- *
- * @example
- * ```typescript
- * switch (entry.kind) {
- *   case 'execute_op': ...
- *   case 'execute_intent': ...
- *   // ...
- *   default:
- *     return assertNever(entry)
- * }
- * ```
  */
 export function assertNever(x: never): never {
   throw new Error(`Unhandled discriminant: ${JSON.stringify(x)}`)
 }
 
-// ============== Type Guards（可选辅助）==============
-/**
- * 检查是否为 OpEntry
- */
+// ============== Type Guards ==============
 export function isOpEntry(entry: StackEntry): entry is OpEntry {
   return entry.kind === 'execute_op'
 }
 
-/**
- * 检查是否为 IntentEntry
- */
 export function isIntentEntry(entry: StackEntry): entry is IntentEntry {
   return entry.kind === 'execute_intent'
 }
 
-/**
- * 检查是否为 MoveEntry
- */
 export function isMoveEntry(entry: StackEntry): entry is MoveEntry {
   return entry.kind === 'move'
 }
 
-/**
- * 检查是否为 SkipN
- */
 export function isSkipN(entry: StackEntry): entry is SkipN {
   return entry.kind === 'skip_n'
 }
 
-/**
- * 检查是否为 ConditionalSkip
- */
 export function isConditionalSkip(entry: StackEntry): entry is ConditionalSkip {
   return entry.kind === 'conditional_skip'
+}
+
+// ============== Address 类型守卫 ==============
+export function isLiteralAddress(addr: Address): addr is { kind: 'literal'; value: Value } {
+  return addr.kind === 'literal'
+}
+
+export function isPublicAddress(addr: Address): addr is { kind: 'public'; name: string } {
+  return addr.kind === 'public'
+}
+
+export function isInternalAddress(addr: Address): addr is { kind: 'internal'; name: string } {
+  return addr.kind === 'internal'
+}
+
+export function isFileAddress(addr: Address): addr is { kind: 'file'; path: string } {
+  return addr.kind === 'file'
 }
