@@ -8,18 +8,11 @@
  * 设计原则：
  * - L3 compile 返回预设的 children 列表
  * - 不调用真实 L3 编译逻辑（那是 Phase C 的事）
+ * - 实现生产代码的 L3Service 接口
  */
 
-import type { RecognizedIntent } from '../l1/types.js'
-
-/**
- * 完整 L3Service 接口（A0 阶段简化为最小版本）
- *
- * 完整接口（含 StandardIntent 类型）将在 A8/Phase C 实现。
- */
-export interface L3Service {
-  compile(intent: RecognizedIntent): Promise<unknown[]>
-}
+import type { RecognizedIntent, StackEntry } from '../l1/types.js'
+import type { L3Service } from '../l3/service.js'
 
 /**
  * 创建一个返回预设 children 的 mock L3 service
@@ -27,7 +20,7 @@ export interface L3Service {
  * @param children 要返回的 children 数组
  * @returns L3Service 实例
  */
-export function createMockL3(children: unknown[]): L3Service {
+export function createMockL3(children: StackEntry[]): L3Service {
   return {
     compile: async (_intent: RecognizedIntent) => {
       // 直接返回预设值
@@ -46,7 +39,7 @@ export interface SpyL3 extends L3Service {
   lastIntent: () => RecognizedIntent | undefined
 }
 
-export function createSpyL3(children: unknown[]): SpyL3 {
+export function createSpyL3(children: StackEntry[]): SpyL3 {
   let calls = 0
   let last: RecognizedIntent | undefined = undefined
 
