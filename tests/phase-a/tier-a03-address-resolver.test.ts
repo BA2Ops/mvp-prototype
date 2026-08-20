@@ -185,6 +185,27 @@ describe('A3: Address 解析器（双区架构版）', () => {
       const content = await fs.readFile(filePath, 'utf-8')
       expect(content).toBe('written content')
     })
+
+    test('write 不可写路径抛 AddressError', async () => {
+      // 尝试写入不存在的目录下的文件
+      const badPath = '/nonexistent-dir-12345/output.txt'
+
+      await expect(
+        writeAddress(
+          { kind: 'file', path: badPath },
+          'content',
+          state
+        )
+      ).rejects.toThrow(AddressError)
+
+      await expect(
+        writeAddress(
+          { kind: 'file', path: badPath },
+          'content',
+          state
+        )
+      ).rejects.toThrow(/Failed to write file/)
+    })
   })
 
   // ============== 集成（move 模式）==============

@@ -14,6 +14,10 @@
  * 错误处理：
  * - 已知错误（缺失 variable、文件不存在）：抛 AddressError
  * - 调用方（A9 main loop 或 A10 propagateHardError）决定如何处理
+ *
+ * 错误码保留（2026-08-20 设计反馈）：
+ * - AddressError 现在保留原始 err.code（如 'ENOENT', 'EACCES'）
+ * - DAG 条件分支可通过 $error.code 决策（如 file_read 不存在 vs 权限拒绝）
  */
 
 import * as fs from 'fs/promises'
@@ -29,12 +33,46 @@ import type { ExecutionState } from './execution-state.js'
  * - 读取不存在的 file
  * - 写入 literal（不允许）
  * - 文件系统 IO 错误
+ *
+ * code 字段语义：
+ * - 'LITERAL_WRITE'：尝试写入 literal（编程错误）
+ * - 'VARIABLE_NOT_FOUND'：public/internal 不存在
+ * - 'FILE_NOT_FOUND'：文件不存在（ENOENT）
+ * - 'FILE_PERMISSION_DENIED'：权限拒绝（EACCES）
+ * - 'FILE_IO_ERROR'：其他文件系统错误
+ * - 原始 fs 错误码（如 'ENOENT'）会透传
+ * - undefined：编程错误或不可分类
  */
 export class AddressError extends Error {
-  constructor(message: string) {
+  /** 错误分类（用于 DAG 条件分支决策） */
+  readonly code: string | undefined
+
+  constructor(message: string, code?: string) {
     super(message)
     this.name = 'AddressError'
+    this.code = code
   }
+}
+
+/**
+ * 从任意 thrown 值提取 (message, code)
+ *
+ * 处理 3 种情况：
+ * 1. Error 子类：取 .message 和 .code（如果有）
+ * 2. 非 Error 对象：String() 转换，code 设为 'NON_ERROR_THROW'
+ * 3. 其他：兜底
+ */
+function extractErrorInfo(err: unknown): { message: string; code: string | undefined } {
+  if (err instanceof Error) {
+    // Node.js fs 错误的 code 属性（如 'ENOENT', 'EACCES'）
+    const code = 'code' in err && typeof (err as { code?: unknown }).code === 'string'
+      ? (err as { code: string }).code
+      : undefined
+    return { message: err.message, code }
+  }
+
+  // 非 Error 抛出（理论不应该发生，但是防御性）
+  return { message: String(err), code: 'NON_ERROR_THROW' }
 }
 
 /**
@@ -44,7 +82,7 @@ export class AddressError extends Error {
  * @param state ExecutionState
  * @returns Value
  *
- * @throws AddressError
+ * @throws AddressError（包含原始错误码如果有）
  */
 export async function resolveAddress(
   addr: Address,
@@ -56,13 +94,19 @@ export async function resolveAddress(
 
     case 'public':
       if (!state.publicStore.has(addr.name)) {
-        throw new AddressError(`Public variable not found: ${addr.name}`)
+        throw new AddressError(
+          `Public variable not found: ${addr.name}`,
+          'VARIABLE_NOT_FOUND'
+        )
       }
       return state.publicStore.get(addr.name)!
 
     case 'internal':
       if (!state.internalStore.has(addr.name)) {
-        throw new AddressError(`Internal register not found: ${addr.name}`)
+        throw new AddressError(
+          `Internal register not found: ${addr.name}`,
+          'VARIABLE_NOT_FOUND'
+        )
       }
       return state.internalStore.get(addr.name)!
 
@@ -70,9 +114,10 @@ export async function resolveAddress(
       try {
         return await fs.readFile(addr.path, 'utf-8')
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const { message, code } = extractErrorInfo(err)
         throw new AddressError(
-          `Failed to read file '${addr.path}': ${message}`
+          `Failed to read file '${addr.path}': ${message}`,
+          code
         )
       }
   }
@@ -85,7 +130,7 @@ export async function resolveAddress(
  * @param value 要写入的 Value
  * @param state ExecutionState
  *
- * @throws AddressError（写入 literal 不允许）
+ * @throws AddressError（包含原始错误码如果有）
  */
 export async function writeAddress(
   addr: Address,
@@ -95,7 +140,8 @@ export async function writeAddress(
   switch (addr.kind) {
     case 'literal':
       throw new AddressError(
-        'Cannot write to literal address (literal is read-only)'
+        'Cannot write to literal address (literal is read-only)',
+        'LITERAL_WRITE'
       )
 
     case 'public':
@@ -110,9 +156,10 @@ export async function writeAddress(
       try {
         await fs.writeFile(addr.path, String(value))
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        const { message, code } = extractErrorInfo(err)
         throw new AddressError(
-          `Failed to write file '${addr.path}': ${message}`
+          `Failed to write file '${addr.path}': ${message}`,
+          code
         )
       }
       break

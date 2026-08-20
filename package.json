@@ -8,12 +8,15 @@
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:coverage:html": "vitest run --coverage --reporter=html",
     "test:a00": "vitest run tests/phase-a/tier-a00",
     "test:phase-a": "vitest run tests/phase-a",
     "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
   }
