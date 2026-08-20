@@ -1,0 +1,20 @@
+{
+  "name": "mvp-prototype",
+  "version": "0.0.1",
+  "private": true,
+  "description": "MVP prototype: L1 5-primitive scheduler with mock-first testing strategy",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:a00": "vitest run tests/phase-a/tier-a00",
+    "test:phase-a": "vitest run tests/phase-a",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  }
+}
