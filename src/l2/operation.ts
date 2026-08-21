@@ -12,6 +12,7 @@
  */
 
 import type { Value } from '../l1/types.js'
+import type { ExecutionState } from '../l1/execution-state.js'
 import type { OperationError } from './errors.js'
 
 // ============== 形参元数据（业务名 ↔ 寄存器）==============
@@ -90,6 +91,7 @@ export interface Operation {
   /**
    * 执行函数
    * @param inputs 已解析的输入值（来自 internalStore 读取）
+   * @param state 可选的 ExecutionState（仅特殊 op 如 evaluate_expr 需要动态读 internal 寄存器）
    * @returns 输出值（写入 internalStore）
    *
    * 错误处理契约：
@@ -98,8 +100,12 @@ export interface Operation {
    *   - error: OperationError 表示已知错误（已分类）
    * - 硬错误（不可恢复）：throw Error
    *   - 例如：磁盘故障、权限拒绝（未分类）、网络超时等
+   *
+   * state 参数（2026-08-20 evaluate_expr 重构新增）：
+   * - 普通 op 不需要，传或不传都行
+   * - evaluate_expr 需要通过 state.internalStore.get 动态读寄存器（expr.var.name）
    */
-  execute(inputs: Record<string, Value>): Promise<Record<string, Value>>
+  execute(inputs: Record<string, Value>, state?: ExecutionState): Promise<Record<string, Value>>
 }
 
 /**

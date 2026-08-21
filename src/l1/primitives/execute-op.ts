@@ -128,7 +128,8 @@ export async function executeOp(
   // ============ Step 5: 调用 op.execute ============
   // 硬错误会在这里 throw，让外层 catch 处理（propagateHardError）
   // 已知错误作为 outputs.error 返回（不抛错，正常处理）
-  const outputs = await op.execute(resolvedInputs as Record<string, never>)
+  // state 传入（向后兼容：普通 op 不读 state，evaluate_expr 用 state.internalStore 动态读寄存器）
+  const outputs = await op.execute(resolvedInputs as Record<string, never>, state)
 
   // ============ Step 6: 写入 outputs 到 internalStore ============
   for (const [name, addr] of Object.entries(entry.outputs)) {
