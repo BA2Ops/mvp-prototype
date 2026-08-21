@@ -117,6 +117,7 @@ E 是 A 的配套（没有 trace，真 LLM 的识别失败无法归因）。
 > - [15 设计时可视化（T2）](./15-experience-visualization.md)
 > - [16 LLM 辅助经验设计（T3）](./16-experience-llm-assisted-design.md)
 > - [17 元数据规范与编译器消费（T4）](./17-experience-metadata.md)
+> - [18 XML→L3 编译器：推理补全](./18-xml-to-l3-compiler.md)（由 T2 决策衍生）
 
 ### T1 经验库搜索 + L4 任务编排（2026-08-20 定位升级）
 
