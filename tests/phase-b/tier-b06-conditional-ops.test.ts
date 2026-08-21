@@ -143,6 +143,12 @@ describe('B06: 条件计算 op 族', () => {
       expect(isOperationError(r.error)).toBe(true)
       expect((r.error as { code: string }).code).toBe('INVALID_INPUT')
     })
+
+    test('lt INVALID_INPUT: 类型混合', async () => {
+      const r = await ltOp.execute({ a: 5, b: '5' })
+      expect(isOperationError(r.error)).toBe(true)
+      expect((r.error as { code: string }).code).toBe('INVALID_INPUT')
+    })
   })
 
   // ============== gte / lte ==============
@@ -170,6 +176,16 @@ describe('B06: 条件计算 op 族', () => {
     test('循环条件模式：$count >= 3 (doc 10 §6.5)', async () => {
       const r = await gteOp.execute({ a: 3, b: 3 })
       expect(r.result).toBe(true)
+    })
+
+    test('gte INVALID_INPUT: 类型混合', async () => {
+      const r = await gteOp.execute({ a: 5, b: '5' })
+      expect(isOperationError(r.error)).toBe(true)
+    })
+
+    test('lte INVALID_INPUT: 类型混合', async () => {
+      const r = await lteOp.execute({ a: '5', b: 5 })
+      expect(isOperationError(r.error)).toBe(true)
     })
   })
 
