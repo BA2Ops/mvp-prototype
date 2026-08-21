@@ -69,17 +69,6 @@ export interface RecognizedIntent {
   params: Record<string, unknown>
 }
 
-/**
- * 标准意图定义（L3 输入）
- */
-export interface StandardIntent {
-  name: string
-  description: string
-  inputs: Record<string, unknown>
-  outputs: Record<string, unknown>
-  children: unknown[]
-}
-
 // ============== BaseEntry ==============
 /**
  * 指令栈条目的基础字段
@@ -115,8 +104,8 @@ export interface OpEntry extends BaseEntry {
  */
 export interface IntentEntry extends BaseEntry {
   kind: 'execute_intent'
-  /** 意图内容 */
-  intent: RecognizedIntent | StandardIntent
+  /** 意图内容（Experience ID + params，由 L4 LLM 标准化） */
+  intent: RecognizedIntent
   /** 生命周期阶段 */
   phase: 'pending' | 'awaiting_children' | 'done' | 'aborted'
   /** 编译后的子 entries */
