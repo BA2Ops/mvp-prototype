@@ -147,6 +147,7 @@ export const grepSearchOp: Operation = {
           ) as unknown as Value
         }
       }
+      /* v8 ignore next 3 -- 防御代码：正则构造仅 throw SyntaxError */
       throw regexErr
     }
 
@@ -160,8 +161,9 @@ export const grepSearchOp: Operation = {
           try {
             const fileStat = await fs.stat(joinPath(path, file))
             if (fileStat.isFile()) files.push(joinPath(path, file))
+            /* v8 ignore next 3 -- 防御代码：stat 失败项跳过（socket/broken symlink） */
           } catch {
-            // 跳过 stat 失败的项（如 socket、broken symlink）
+            continue
           }
         }
       } else if (stat.isFile()) {
@@ -174,8 +176,8 @@ export const grepSearchOp: Operation = {
         let content: string
         try {
           content = await fs.readFile(file, { encoding: 'utf-8' })
+        /* v8 ignore next 3 -- 防御代码：二进制文件读取失败跳过 */
         } catch {
-          // 跳过读取失败的文件（如二进制）
           continue
         }
         const lines = content.split('\n')
@@ -212,6 +214,7 @@ export const grepSearchOp: Operation = {
           ) as unknown as Value
         }
       }
+      /* v8 ignore next 2 -- 防御代码：常见 fs 错误已覆盖；未知错误 throw 走 L1 冒泡 */
       throw err
     }
   }

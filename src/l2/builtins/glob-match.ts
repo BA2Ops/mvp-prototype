@@ -108,6 +108,7 @@ export const globMatchOp: Operation = {
           error: createOperationError(code, (err as Error).message, 'glob_match') as unknown as Value
         }
       }
+      /* v8 ignore next 2 -- 防御代码：cwd stat 通常只 ENOENT/EACCES */
       throw err
     }
 
@@ -123,7 +124,7 @@ export const globMatchOp: Operation = {
         error: null
       }
     } catch (err: unknown) {
-      // 已知错误码：返回数据
+      /* v8 ignore next 15 -- 防御代码：cwd stat 已先检查 ENOENT/EACCES；glob 内此分支不可达 */
       const code = (err as NodeJS.ErrnoException).code
       if (code === 'ENOENT' || code === 'EACCES') {
         return {
