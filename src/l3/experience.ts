@@ -16,6 +16,9 @@
 import type { Value } from '../l1/types.js'
 import type { Expr } from '../l2/builtins/evaluate-expr.js'
 
+// 便利 re-export：消费者可从 experience.ts 一并导入 Expr
+export type { Expr } from '../l2/builtins/evaluate-expr.js'
+
 // ============== ParamRef（参数引用）==========================
 
 /**
