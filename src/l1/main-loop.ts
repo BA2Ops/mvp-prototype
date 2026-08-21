@@ -77,6 +77,15 @@ export interface L1RunOptions {
    * 超限抛 RecursionDepthError（L1 系统防御，不走业务冒泡）。
    */
   maxRecursionDepth?: number
+
+  /**
+   * 根帧 handleError 标志（D-C4-5，2026-08-20 C6 补充）
+   *
+   * 错误处置权在 L3：调用方（E2E / 上层 service）从经验定义读取
+   * shouldHandleError(intent.type) 后传入此处。
+   * 默认 false：根层异常冒泡给 l1MainLoop 调用者。
+   */
+  rootHandleError?: boolean
 }
 
 /**
@@ -273,7 +282,9 @@ export async function l1MainLoop(
   options?: L1RunOptions
 ): Promise<void> {
   // ============ Step 1: 压入根意图 ============
-  state.stack.push(createRootIntentEntry(rootIntent))
+  // D-C4-5：根帧 handleError 由调用方经 options.rootHandleError 传入
+  // （错误处置权在 L3：调用方从 experience.handleError 读取）
+  state.stack.push(createRootIntentEntry(rootIntent, options?.rootHandleError ?? false))
 
   // ============ Step 2: 主循环 ============
   let steps = 0
