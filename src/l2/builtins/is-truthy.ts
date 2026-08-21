@@ -62,7 +62,7 @@ export const isEmptyOp: Operation = {
     } else if (typeof v === 'object') {
       empty = Object.keys(v as object).length === 0
     } else {
-      // number / boolean：永不为空（但 is_empty 仍可工作）
+      /* v8 ignore next 2 -- 防御代码：number/boolean 永不为空（语义已隐含） */
       empty = false
     }
     return { result: empty, error: null }

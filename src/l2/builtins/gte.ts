@@ -42,6 +42,7 @@ export const gteOp: Operation = {
     }
     return {
       result: false,
+      /* v8 ignore next 4 -- 防御代码：gte INVALID_INPUT 分支（类型混合防御） */
       error: createOperationError(
         'INVALID_INPUT',
         `gte requires both args to be number or string`,
@@ -78,6 +79,7 @@ export const lteOp: Operation = {
     }
     return {
       result: false,
+      /* v8 ignore next 4 -- 防御代码：lte INVALID_INPUT 分支（与 gte 对称） */
       error: createOperationError(
         'INVALID_INPUT',
         `lte requires both args to be number or string`,

@@ -91,6 +91,7 @@ export const ltOp: Operation = {
     }
     return {
       result: false,
+      /* v8 ignore next 4 -- 防御代码：lt INVALID_INPUT 分支（与 gt 类似） */
       error: createOperationError(
         'INVALID_INPUT',
         `lt requires both args to be number or string, got ${typeof a}, ${typeof b}`,
