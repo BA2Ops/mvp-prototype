@@ -14,22 +14,25 @@
  */
 
 import type { Value } from '../l1/types.js'
+import type { Expr } from '../l2/builtins/evaluate-expr.js'
 
 // ============== ParamRef（参数引用）==========================
 
 /**
  * 参数引用：如何获取参数值
  *
- * 三种来源：
+ * 四种来源：
  * - literal: 字面量
- * - input: 来自 experience.inputs
- * - preprocessing / register: 来自前置处理输出或寄存器
+ * - input: 来自 intent.params（L3 compile-time 绑定到 $r_input_* 寄存器）
+ * - register: 引用 internalStore 中的已有寄存器名（如 '$r_file_content'）
+ *   ——包括前置处理的输出。D-C1-1: 删除原 `kind:'preprocessing'`，因为
+ *   前置输出的本质就是「写入了某个 named register」，用 register 引用即可。
+ *   好处：简化编译逻辑；让经验定义中可自由引用任意中间结果（不必显式声明依赖链）。
  */
 export type ParamRef =
   | { kind: 'literal'; value: Value }
   | { kind: 'input'; name: string }
   | { kind: 'register'; name: string }
-  | { kind: 'preprocessing'; preproc_id: string; output: string }
 
 // ============== Pre-Processing（前置处理）===================
 
@@ -80,18 +83,37 @@ export interface ConditionalJudgment {
   else_path?: string
 }
 
+/**
+ * JudgmentTrigger：用 evaluate_expr 的 Expr AST 表达任意条件
+ *
+ * @see ../../docs/mvp/12-experience-model.md §3.4（2026-08-20 重构）
+ * @see src/l2/builtins/evaluate-expr.ts Expr type
+ *
+ * 设计变更历史：
+ * - v1 (2026-07)：source + condition_op + compare_value → L3 编译器要拼多步 DAG
+ *   （move compare_value 到寄存器 + execute_op equals/gt/is_truthy ...）
+ * - v2 (2026-08-20)：**Expr JSON 树**——单一表达式节点，L3 编译为单个
+ *   `execute_op(evaluate_expr)` + conditional_skip。DAG 长度从 5-6 → 1。
+ *
+ * 表达能力不变（equals / gte / and / or / not / in 等全部保留），但：
+ * - L3 经验定义直接是 "AST"（JSON），更接近人类思维
+ * - 短路语义天然支持（and/or）
+ * - 无需为新条件类型加 op（组合即可）
+ */
 export interface JudgmentTrigger {
-  /** 数据源：前置处理的输出 / 用户输入 / 其他 */
-  source: 'preprocessing' | 'input' | 'register'
-
-  /** 源 ID（如 'preprocessing[0].outputs.r_count'）*/
-  source_id: string
-
-  /** 条件 op（如 string_equals, is_truthy, greater_than）*/
-  condition_op: string
-
-  /** 比较值 */
-  compare_value: Value
+  /**
+   * 触发条件的完整表达式 AST（见 evaluate-expr.Expr）
+   *
+   * 可包含:
+   * - { type: 'literal', value: ... }
+   * - { type: 'var', name: '$r_xxx' }    ← 引用 internal 寄存器或 env 映射变量
+   * - { type: 'op', name: '==|!=|>...|gte|lte|and|or|not|error_code|is_empty|...', args: [...] }
+   * - { type: 'if', cond, then, else }
+   *
+   * 编译器会把 expr.var.name = '$r_err' 类引用自动解析到 ExecutionState.internalStore，
+   * 其他 var.name 通过 compile-time 生成的 `env` 参数映射。
+   */
+  condition_expr: Expr
 }
 
 // ============== Target-Op（目标操作）======================

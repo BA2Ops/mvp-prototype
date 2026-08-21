@@ -46,26 +46,15 @@ describe('A0f: Experience 数据结构（双区架构版）', () => {
       expect(ref.name).toBe('$r0')
     })
 
-    test('preprocessing: 来自前置处理输出', () => {
-      const ref: ParamRef = {
-        kind: 'preprocessing',
-        preproc_id: 'check_exists',
-        output: 'content'
-      }
-      expect(ref.kind).toBe('preprocessing')
-      expect(ref.preproc_id).toBe('check_exists')
-      expect(ref.output).toBe('content')
-    })
-
-    test('四种 kind 互斥', () => {
+    test('三种 kind 互斥（D-C1-1：删除 preprocessing）', () => {
+      // D-C1-1: 原 `kind:'preprocessing'` 已删除——前置输出本质是「写入了某个 named register」，用 register 引用即可。
       const refs: ParamRef[] = [
         { kind: 'literal', value: 1 },
         { kind: 'input', name: 'x' },
-        { kind: 'register', name: '$r0' },
-        { kind: 'preprocessing', preproc_id: 'p', output: 'o' }
+        { kind: 'register', name: '$r_content_from_preproc' }
       ]
       const kinds = new Set(refs.map(r => r.kind))
-      expect(kinds.size).toBe(4)
+      expect(kinds.size).toBe(3)
     })
   })
 
@@ -110,54 +99,46 @@ describe('A0f: Experience 数据结构（双区架构版）', () => {
 
   // ============== ConditionalJudgment ==============
   describe('ConditionalJudgment（条件判断）', () => {
-    test('基本字段：trigger/then_path/else_path', () => {
+    /** D-C2-1（evaluate_expr 重构）：trigger.condition_expr 是 Expr AST。*/
+    function mkExpr(name: string): import('../../src/l2/builtins/evaluate-expr.js').Expr {
+      return { type: 'var', name }
+    }
+
+    test('基本字段：condition_expr / then_path / else_path', () => {
+      // $r_err is_truthy → file_not_found；否则 normal
       const judgment: ConditionalJudgment = {
         id: 'check_error',
         trigger: {
-          source: 'preprocessing',
-          source_id: 'try_read',
-          condition_op: 'is_truthy',
-          compare_value: true
-        },
+          condition_expr: { type: 'op', name: 'is_truthy' as never, args: [mkExpr('$r_err')] }
+        } as never,
         then_path: 'file_not_found',
         else_path: 'normal'
       }
-
       expect(judgment.then_path).toBe('file_not_found')
       expect(judgment.else_path).toBe('normal')
+      expect((judgment.trigger as unknown as { condition_expr: unknown }).condition_expr).toBeDefined()
     })
 
-    test('else_path 可选（默认 normal）', () => {
-      const judgment: ConditionalJudgment = {
-        id: 'j1',
-        trigger: {
-          source: 'input',
-          source_id: 'strict',
-          condition_op: 'equals',
-          compare_value: true
-        },
-        then_path: 'strict_mode'
-        // 没有 else_path
+    test('复合条件表达式 (and + == + error_code)', () => {
+      // and(error_code($r_err) == 'ENOENT', not(is_empty($r_items)))
+      const expr = {
+        type: 'op' as const, name: 'and' as never,
+        args: [
+          { type: 'op' as const, name: '==' as never, args: [
+            { type: 'op' as const, name: 'error_code' as never, args: [{ type: 'var' as const, name: '$r_err' }] },
+            { type: 'literal' as const, value: 'ENOENT' as never }
+          ]},
+          { type: 'op' as const, name: 'not' as never, args: [
+            { type: 'op' as const, name: 'is_empty' as never, args: [{ type: 'var' as const, name: '$r_items' }] }
+          ]}
+        ]
       }
-
-      expect(judgment.else_path).toBeUndefined()
-    })
-
-    test('trigger 三种 source：preprocessing/input/register', () => {
-      const sources: ('preprocessing' | 'input' | 'register')[] = [
-        'preprocessing',
-        'input',
-        'register'
-      ]
-
-      for (const source of sources) {
-        const j: ConditionalJudgment = {
-          id: `j_${source}`,
-          trigger: { source, source_id: 'x', condition_op: 'equals', compare_value: 0 },
-          then_path: 'p'
-        }
-        expect(j.trigger.source).toBe(source)
+      const j: ConditionalJudgment = {
+        id: 'j_compound',
+        trigger: { condition_expr: expr } as never,
+        then_path: 'retry'
       }
+      expect((j.trigger as unknown as { condition_expr: import('../../src/l2/builtins/evaluate-expr.js').Expr }).condition_expr.name).toBe('and')
     })
   })
 
@@ -275,15 +256,18 @@ describe('A0f: Experience 数据结构（双区架构版）', () => {
           }
         ],
 
+        // D-C2-1（evaluate_expr 重构）：trigger.condition_expr = Expr AST
         conditional_judgment: [
           {
             id: 'check_error',
             trigger: {
-              source: 'preprocessing',
-              source_id: 'try_read',
-              condition_op: 'is_truthy',
-              compare_value: true
-            },
+              // is_truthy($r_err) → 有错误则走异常路径
+              condition_expr: {
+                type: 'op' as never,
+                name: 'is_truthy' as never,
+                args: [{ type: 'var' as const, name: '$r_err' }]
+              }
+            } as unknown as import('../../src/l3/experience.js').JudgmentTrigger,
             then_path: 'file_not_found',
             else_path: 'normal'
           }
