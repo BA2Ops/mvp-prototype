@@ -128,11 +128,14 @@ export async function executeConditionalSkip(
   // ============ Step 5: 弹栈 ============
   if (truthy) {
     // 条件为真：弹出 self + n 个后续 entry
-    // 不跨帧：遇到 IntentEntry 帧停止弹出（保护调用边界）
+    // 帧边界保护（A11 细化）：
+    //   - pending 帧（未开始的子调用）：允许跳过 —— 循环终止需要跳过 execute_intent(self)
+    //   - awaiting_children / aborted 帧（执行中/已结束）：停止弹出（保护调用边界）
     const totalPops = entry.n + 1
     for (let i = 0; i < totalPops; i++) {
       if (state.stack.length === 0) break
-      if (isIntentEntry(state.stack[state.stack.length - 1])) break
+      const top = state.stack[state.stack.length - 1]
+      if (isIntentEntry(top) && top.phase !== 'pending') break
       state.stack.pop()
     }
   } else {

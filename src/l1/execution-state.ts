@@ -98,6 +98,17 @@ export interface ExecutionState {
    */
   allocator: RegisterAllocator
 
+  /**
+   * 递归深度计数（A11）
+   *
+   * key = intent.type（循环通过递归 intent 引用实现）
+   * value = 当前调用链上该意图的帧数
+   *
+   * 由主循环管理：帧 activate（pending → compile）时 enterIntent，
+   * 帧回收（done / aborted）时 exitIntent（见 src/l1/recursion.ts）
+   */
+  recursionDepth: Map<string, number>
+
   /** L2 operation 注册表（execute_op 使用）*/
   l2: L2Registry
 
@@ -123,6 +134,7 @@ export function createInitialState(
     publicStore: new Map(),
     internalStore: new Map(),
     allocator: new RegisterAllocator(),
+    recursionDepth: new Map(),
     l2,
     l3
   }
@@ -148,4 +160,5 @@ export function resetState(state: ExecutionState): void {
   state.publicStore.clear()
   state.internalStore.clear()
   state.allocator.reset()
+  state.recursionDepth.clear()
 }

@@ -60,12 +60,16 @@ export async function executeSkipN(
 
   // 弹出 self + n 个 entry（总 n+1 个）
   // 如果栈不足，弹空为止（graceful）
-  // 如果遇到 IntentEntry 帧，停止弹出（不跨帧，保护调用边界）
+  // 帧边界保护（A11 细化）：
+  //   - pending 帧（未开始的子调用）：允许跳过 —— 循环终止需要跳过 execute_intent(self)
+  //     （doc 10 §6.5 循环模式：cond_skip(stop) → execute_intent(self)）
+  //   - awaiting_children / aborted 帧（执行中/已结束）：停止弹出（保护调用边界）
   const totalPops = entry.n + 1
   for (let i = 0; i < totalPops; i++) {
     if (state.stack.length === 0) break
-    // 不跨帧：弹出前检查栈顶是否是帧
-    if (isIntentEntry(state.stack[state.stack.length - 1])) break
+    // 弹出前检查栈顶：执行中的帧不可跨（pending 帧可跳过 = 不执行子调用）
+    const top = state.stack[state.stack.length - 1]
+    if (isIntentEntry(top) && top.phase !== 'pending') break
     state.stack.pop()
   }
 }

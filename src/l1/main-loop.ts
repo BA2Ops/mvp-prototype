@@ -30,6 +30,7 @@ import type { ExecutionState } from './execution-state.js'
 import { assertNever, isIntentEntry } from './types.js'
 import { generateId, now } from './id.js'
 import { ERROR_REGISTER, errorToOperationError } from '../l2/errors.js'
+import { DEFAULT_MAX_RECURSION_DEPTH, enterIntent, exitIntent, RecursionDepthError } from './recursion.js'
 import { executeMove } from './primitives/move.js'
 import { executeOp } from './primitives/execute-op.js'
 import { executeIntent } from './primitives/execute-intent.js'
@@ -68,6 +69,14 @@ export interface L1RunOptions {
    * 默认无限制。
    */
   maxSteps?: number
+
+  /**
+   * 最大递归深度（循环意图安全网，A11）
+   *
+   * 默认 DEFAULT_MAX_RECURSION_DEPTH（1000）。
+   * 超限抛 RecursionDepthError（L1 系统防御，不走业务冒泡）。
+   */
+  maxRecursionDepth?: number
 }
 
 /**
@@ -104,17 +113,22 @@ export function createRootIntentEntry(
  */
 async function processIntentEntry(
   top: IntentEntry,
-  state: ExecutionState
+  state: ExecutionState,
+  maxRecursionDepth: number
 ): Promise<void> {
   if (top.phase === 'pending') {
+    // A11：激活帧前先登记递归深度（超限抛 RecursionDepthError，此时 phase 仍 pending，
+    // 冒泡时不会误判为已 enter 的帧——见 abortFrame）
+    enterIntent(top.intent.type, state, maxRecursionDepth)
     await executeIntent(top, state)
     return
   }
 
   if (top.phase === 'awaiting_children') {
     // children 已全部执行完（栈顶回到帧）
-    // 注：异常冒泡会直接把帧 pop 并标记 aborted，因此到达这里的
+    // 注：异常冒泡会直接把帧 pop 并标记 aborted（且 exitIntent），因此到达这里的
     // awaiting_children 帧必然正常完成了 children
+    exitIntent(top.intent.type, state)
     top.phase = 'done'
     state.stack.pop()
     return
@@ -123,6 +137,26 @@ async function processIntentEntry(
   // aborted：不应在主循环中再次遇到（冒泡时已被 pop）
   /* v8 ignore next 3 -- 防御代码：aborted 帧在冒泡时已被弹出，运行时不可达 */
   throw new Error(`execute_intent frame in unexpected phase: ${top.phase}`)
+}
+
+/**
+ * 释放帧（abort）：exitIntent + 标记 aborted
+ *
+ * 冒泡弹出帧时的统一收尾：
+ * - phase 'pending'：未 enter（processIntentEntry 未处理过），只标记 aborted
+ * - phase 'awaiting_children'：已 enter（compile 过），需 exitIntent 平衡计数
+ * - phase 'aborted'：防御（不应重复释放）
+ */
+function abortFrame(entry: StackEntry, state: ExecutionState): void {
+  if (isIntentEntry(entry)) {
+    if (entry.phase === 'awaiting_children') {
+      exitIntent(entry.intent.type, state)
+    } else {
+      /* v8 ignore next 2 -- 防御代码：aborted 帧只被释放一次；pending 帧未 enter 无需 exit */
+      // pending：未 enter；aborted：已释放——均无需 exitIntent
+    }
+    entry.phase = 'aborted'
+  }
 }
 
 /**
@@ -159,8 +193,10 @@ export async function bubbleError(
 
   // ============ Step 2: 弹出异常点 entry ============
   // 主循环 catch 时栈顶即抛错者（primitive 抛错时未 pop）
+  // 异常点可能是帧（如 L3 compile 抛错）→ 需释放（exitIntent + aborted）
   if (state.stack.length > 0) {
-    state.stack.pop()
+    const popped = state.stack.pop()
+    if (popped) abortFrame(popped, state)
   }
 
   // ============ Step 3: 从栈顶向下找最近的 handleError 帧 ============
@@ -176,7 +212,7 @@ export async function bubbleError(
   // ============ Step 4: 无 handler → 全部弹出，返回 false ============
   if (handlerIndex === -1) {
     for (const e of state.stack) {
-      if (isIntentEntry(e)) e.phase = 'aborted'
+      abortFrame(e, state)
     }
     state.stack.length = 0
     return false
@@ -197,8 +233,8 @@ export async function bubbleError(
     const e = state.stack[i]
     if (isIntentEntry(e)) {
       if (!e.handleError) {
-        // 无标志帧：弹出（其 children 也 drop）
-        e.phase = 'aborted'
+        // 无标志帧：弹出（其 children 也 drop）→ 释放（exitIntent + aborted）
+        abortFrame(e, state)
         mode = 'drop'
       }
       // 防御：handler 之上不应再出现 handler（最近的 handler 已找到）
@@ -266,7 +302,7 @@ export async function l1MainLoop(
           break
 
         case 'execute_intent':
-          await processIntentEntry(top, state)
+          await processIntentEntry(top, state, options?.maxRecursionDepth ?? DEFAULT_MAX_RECURSION_DEPTH)
           break
 
         case 'skip_n':
@@ -283,6 +319,12 @@ export async function l1MainLoop(
           assertNever(top)
       }
     } catch (err) {
+      // ====== L1 系统防御错误：不走业务冒泡 ======
+      // RecursionDepthError 与 L1MaxStepsError 同类：若被 handleError 截获，
+      // 递归经验可无限重试 → 防御机制失效。直接抛给调用者。
+      if (err instanceof RecursionDepthError) {
+        throw err
+      }
       // ====== 异常冒泡：处置权在 L3（handleError 标志）======
       const handled = await bubbleError(err, state)
       if (!handled) {
