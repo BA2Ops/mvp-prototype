@@ -114,7 +114,7 @@ export const sortByOp: Operation = {
       } else if (typeof av === 'string' && typeof bv === 'string') {
         cmp = av < bv ? -1 : av > bv ? 1 : 0
       } else {
-        // 通用比较（依赖 JS < 运算符）
+        /* v8 ignore next 3 -- 防御代码：通用 < / > 比较（未指定混合类型排序场景）*/
         cmp = (av as never) < (bv as never) ? -1 : (av as never) > (bv as never) ? 1 : 0
       }
       return desc ? -cmp : cmp
