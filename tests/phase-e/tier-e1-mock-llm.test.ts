@@ -171,7 +171,13 @@ describe('E1: Pipeline 端到端（自然语言 → 真实世界）', () => {
     expect(p2.primary).toBe('v1')
   })
 
-  test('无法识别的话语 → 抛 UnrecognizedInputError（不进入执行）', async () => {
-    await expect(mkPipeline().say('讲个笑话')).rejects.toBeInstanceOf(UnrecognizedInputError)
+  test('无法识别的话语 → 友好引导回复（不抛异常、不执行）', async () => {
+    const r = await mkPipeline().say('讲个笑话')
+    expect(r.ok).toBe(false)
+    expect(r.intent).toBeUndefined()
+    // 引导信息包含能力清单（来自 L3 经验库的业务描述）
+    expect(r.message).toContain('我能处理这些操作')
+    expect(r.message).toContain('read_file')
+    expect(r.message).toContain('读取文件内容')
   })
 })

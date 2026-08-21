@@ -1,29 +1,26 @@
 /**
- * L3 核心经验库（Phase C5）
+ * L3 核心经验库（Phase C5 + E2 结果消息增强）
  *
  * @see ../../docs/mvp/12-experience-model.md §7（经验库设计）
- * @see ../../docs/mvp/07-intent-library.md
+ * @see ./response.ts（D-E2-1 消息解析）
  *
  * 设计原则（D-FB-1）：
  * - 每条经验必须有真实使用方（L4 LLM 识别 intent.type → 查此库）
  * - 每条经验的三段式结构直接对应一个真实业务场景
  * - MVP 规模：< 50 条；本库 9 条核心
  *
+ * D-E2-1（信息返回权在 L3）：
+ * - TargetOpPath.response：每条路径的人类可读结果消息模板
+ *   （分支语义 → 分支消息，如 safe_write 的 do_write/abort 各有文案）
+ * - Experience.responses.failure：按 $r_err.code 映射失败消息（'*' 兜底）
+ * - L4 只做插值渲染，不做业务判断——与「错误处置权在 L3」同构：
+ *   信息返回权也在 L3
+ *
  * 寄存器约定：
  * - $r_input_<name>  : 输入绑定（编译器 Step 0 生成）
  * - $r_err           : 全局错误寄存器（ERROR_REGISTER）
+ * - $r_path          : 实际走过的路径 ID 标记（编译器分支构造生成）
  * - $r_<semantic>    : 经验内中间结果
- *
- * 9 条核心经验：
- *  1. read_file              — 读文件（直通）
- *  2. read_file_with_default — 读文件，ENOENT 用默认值（handleError=true）
- *  3. check_file_exists      — 判断文件是否存在
- *  4. write_file             — 写文件（直通）
- *  5. safe_write             — 仅当目标不存在时写入（存在则跳过）
- *  6. find_files             — glob 查找文件
- *  7. search_in_files        — grep 搜索内容
- *  8. run_shell              — 执行外部命令
- *  9. replace_in_file        — 读→替换→写（三步链，文件编辑 MVP）
  */
 
 import type { Experience, Expr } from './experience.js'
@@ -62,12 +59,20 @@ const readFile: Experience = {
   description: '读取文件内容。文件不存在时错误写入 $r_err（数据化，不抛出）。',
   inputs: { path: { type: 'path', required: true } },
   outputs: { content: { type: 'string', required: true } },
+  responses: {
+    failure: {
+      ENOENT: `读取失败：文件 {path} 不存在`,
+      EACCES: `读取失败：没有权限访问 {path}`,
+      '*': `读取失败：{err.message}`
+    }
+  },
   target_op: {
     base_op: 'file_read',
     default_path: 'normal',
     paths: [{
       id: 'normal',
       description: '读取文件',
+      response: `已读取 {path} 的内容`,
       steps: [{
         operation: 'file_read',
         inputs: { path: { kind: 'input', name: 'path' } },
@@ -122,6 +127,7 @@ const readFileWithDefault: Experience = {
       {
         id: 'use_default',
         description: '文件不存在 → 用默认内容',
+        response: `文件 {path} 不存在，已使用默认内容`,
         steps: [{
           operation: 'evaluate_expr',
           inputs: { expr: { kind: 'literal', value: reg('$r_input_default_content') as unknown as Value } },
@@ -134,6 +140,7 @@ const readFileWithDefault: Experience = {
       {
         id: 'normal',
         description: '读取成功 → content 已在 $r_content',
+        response: `已读取 {path} 的内容`,
         steps: []
       }
     ]
@@ -167,6 +174,7 @@ const checkFileExists: Experience = {
     paths: [{
       id: 'normal',
       description: 'exists = is_null($r_err)',
+      response: `文件 {path} 存在检查完成：{exists}`,
       steps: [{
         operation: 'evaluate_expr',
         inputs: { expr: { kind: 'literal', value: noError() as unknown as Value } },
@@ -190,12 +198,16 @@ const writeFile: Experience = {
     content: { type: 'string', required: true }
   },
   outputs: { bytes_written: { type: 'number', required: true } },
+  responses: {
+    failure: { '*': `写入 {path} 失败：{err.message}` }
+  },
   target_op: {
     base_op: 'file_write',
     default_path: 'normal',
     paths: [{
       id: 'normal',
       description: '写入文件',
+      response: `已写入 {path}（{bytes} 字节）`,
       steps: [{
         operation: 'file_write',
         inputs: {
@@ -248,6 +260,7 @@ const safeWrite: Experience = {
       {
         id: 'do_write',
         description: '文件不存在 → 写入',
+        response: `已写入 {path}（{bytes} 字节）`,
         steps: [{
           operation: 'file_write',
           inputs: {
@@ -263,6 +276,7 @@ const safeWrite: Experience = {
       {
         id: 'abort',
         description: '文件已存在 → 跳过（bytes=0）',
+        response: `文件 {path} 已存在，按安全模式跳过写入`,
         steps: [{
           operation: 'evaluate_expr',
           inputs: { expr: { kind: 'literal', value: lit(0) as unknown as Value } },
@@ -296,6 +310,7 @@ const findFiles: Experience = {
     paths: [{
       id: 'normal',
       description: 'glob 匹配',
+      response: `共找到 {count} 个匹配 {pattern} 的文件`,
       steps: [{
         operation: 'glob_match',
         inputs: {
@@ -332,6 +347,7 @@ const searchInFiles: Experience = {
     paths: [{
       id: 'normal',
       description: 'grep 搜索',
+      response: `搜索完成：{pattern} 在 {path} 中共 {count} 处匹配`,
       steps: [{
         operation: 'grep_search',
         inputs: {
@@ -368,6 +384,7 @@ const runShell: Experience = {
     paths: [{
       id: 'normal',
       description: '执行命令',
+      response: `命令执行完成（退出码 {exit}），stdout 见 stdout 字段`,
       steps: [{
         operation: 'shell_exec',
         inputs: {
@@ -402,12 +419,19 @@ const replaceInFile: Experience = {
     count: { type: 'number', required: true }
   },
   handleError: true,
+  responses: {
+    failure: {
+      ENOENT: `替换失败：文件 {path} 不存在`,
+      '*': `替换失败：{err.message}`
+    }
+  },
   target_op: {
     base_op: 'string_replace',
     default_path: 'normal',
     paths: [{
       id: 'normal',
       description: '读 → 替换 → 写',
+      response: `替换完成：{path} 中共替换 {count} 处并已保存`,
       steps: [
         {
           operation: 'file_read',

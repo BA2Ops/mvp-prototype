@@ -24,7 +24,8 @@ import type { OperationError } from '../l2/errors.js'
 import { ERROR_REGISTER } from '../l2/errors.js'
 import type { L2RegistryLike } from '../l3/compiler.js'
 import { ExperienceService } from '../l3/experience-service.js'
-import { MockL4 } from './mock-llm.js'
+import { resolveResponse } from '../l3/response.js'
+import { MockL4, UnrecognizedInputError } from './mock-llm.js'
 
 /** 各经验的主输出寄存器（pipeline 展示用；L4/pipeline 理解业务细节是合理的）*/
 const PRIMARY_OUTPUT: Record<string, string> = {
@@ -44,13 +45,22 @@ export interface SayResult {
   /** 是否正常完成（异常被截获也算 ok=true，看 error 字段判断业务成败）*/
   ok: boolean
 
-  /** L4 识别出的 intent */
-  intent: RecognizedIntent
+  /**
+   * 人类可读结果消息（D-E2-1）
+   *
+   * 由 L3 经验定义的 response/failure 模板插值生成——
+   * 信息内容确定在 L3，L4 只做渲染。
+   * 识别失败时为引导性回复（含能力清单）。
+   */
+  message: string
 
-  /** 主输出寄存器值（经验语义上的"返回值"）*/
+  /** L4 识别出的 intent（识别失败时 undefined）*/
+  intent?: RecognizedIntent
+
+  /** 主输出寄存器值（经验语义上的"返回值"；识别失败时 null）*/
   primary: Value
 
-  /** 全部业务寄存器（过滤编译器临时寄存器）*/
+  /** 全部业务寄存器（过滤编译器临时寄存器；识别失败时空表）*/
   registers: Record<string, Value>
 
   /** 业务错误（$r_err；null = 无错误）*/
@@ -93,12 +103,22 @@ export class AgentPipeline {
   /**
    * 说一句话，执行完整链路，返回观察结果。
    *
-   * @throws UnrecognizedInputError 无法识别的话语
+   * D-E2-1：不再抛 UnrecognizedInputError——识别失败转为引导性回复
+   * （ok=false + 能力清单），符合人类对话预期。
+   *
    * @throws UnhandledError 无 handler 且根层不截获的系统级异常
    */
   async say(utterance: string): Promise<SayResult> {
     // ---- L4：自然语言 → intent ----
-    const intent = this.l4.recognize(utterance)
+    let intent: RecognizedIntent
+    try {
+      intent = this.l4.recognize(utterance)
+    } catch (e) {
+      if (e instanceof UnrecognizedInputError) {
+        return this.unrecognized(utterance)
+      }
+      throw e
+    }
     this.resolveRelativePaths(intent)
 
     // ---- L3/L1/L2：执行 ----
@@ -127,6 +147,24 @@ export class AgentPipeline {
     }
   }
 
+  /** 识别失败 → 引导性回复（能力清单来自 L3 经验库的业务描述）*/
+  private unrecognized(utterance: string): SayResult {
+    const capabilities = this.service
+      .listExperiences()
+      .map(e => `  - ${e.id}：${e.description}`)
+      .join('\n')
+    return {
+      ok: false,
+      message: `我没有理解这句话。目前我能处理这些操作：\n${capabilities}\n请换个说法试试。`,
+      intent: undefined,
+      primary: null,
+      registers: {},
+      error: null,
+      elapsedMs: 0,
+      utterance
+    }
+  }
+
   private collect(
     intent: RecognizedIntent,
     state: ExecutionState,
@@ -135,13 +173,18 @@ export class AgentPipeline {
   ): SayResult {
     const registers: Record<string, Value> = {}
     for (const [k, v] of state.internalStore) {
-      // 过滤编译器内部临时寄存器
+      // 过滤编译器内部临时寄存器（$r_path 保留——resolveResponse 需要）
       if (k.startsWith('$r_argtmp_') || k.startsWith('$r_cond_') || k.startsWith('$r_judge_')) continue
       registers[k] = v
     }
+    const exp = this.service.getExperience(intent.type)
+    const message = exp
+      ? resolveResponse(exp, registers)
+      : `已完成 ${intent.type}`
     const primaryReg = PRIMARY_OUTPUT[intent.type]
     return {
       ok: true,
+      message,
       intent,
       primary: primaryReg ? (registers[primaryReg] ?? null) : null,
       registers,

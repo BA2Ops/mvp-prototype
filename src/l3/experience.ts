@@ -147,6 +147,15 @@ export interface TargetOpPath {
 
   /** 执行步骤 */
   steps: OpStep[]
+
+  /**
+   * 结果消息模板（D-E2-1，2026-08-20）
+   *
+   * 走此路径后向用户返回的人类可读信息。L4 只做插值渲染，不做业务判断。
+   * 模板变量：{param} 输入参数 / {register} 寄存器（去 $r_ 前缀）/ {err.code} {err.message}
+   * 例：「文件 {path} 不存在，已使用默认内容」
+   */
+  response?: string
 }
 
 export interface OpStep {
@@ -212,6 +221,16 @@ export interface Experience {
    * 编译器把它写入嵌套 IntentEntry.handleError；根帧由调用方读取。
    */
   handleError?: boolean
+
+  /**
+   * 失败消息映射（D-E2-1）
+   *
+   * key = $r_err.code（'*' 为兑底），value = 消息模板。
+   * 执行后 $r_err 非空时优先生成失败消息——确保错误对用户显性化而非静默 null。
+   */
+  responses?: {
+    failure?: Record<string, string>
+  }
 
   /** 用户反馈历史（MVP 仅存储，不自动演化）*/
   feedback_history?: FeedbackRecord[]

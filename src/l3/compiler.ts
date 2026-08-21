@@ -73,6 +73,8 @@ const ARG_TMP_PREFIX = '$r_argtmp_'
 const condReg = (jid: string) => `$r_cond_${jid}`
 /** 条件求值结果寄存器 */
 const judgeReg = (jid: string) => `$r_judge_${jid}`
+/** 实际走过的路径 ID 标记（D-E2-1，resolveResponse 用）*/
+const PATH_MARK_REG = '$r_path'
 
 // ============== 公共入口 ===============
 
@@ -206,6 +208,17 @@ function compileBranch(
     args: [j.trigger.condition_expr]
   }
 
+  // D-E2-1：路径标记——THEN/ELSE 块首各插入一条 move，记录实际走过的路径 ID，
+  // 供 L3 resolveResponse 查找对应 path.response 消息模板。
+  // 标记算在各块内部（先构造含标记的块，再算 cskip/skip 长度），长度自然正确。
+  const thenMarked = [
+    makeMove({ kind: 'literal', value: j.then_path }, { kind: 'internal', name: PATH_MARK_REG }),
+    ...thenEntries
+  ]
+  const elseMarked = j.else_path
+    ? [makeMove({ kind: 'literal', value: j.else_path }, { kind: 'internal', name: PATH_MARK_REG }), ...elseEntries]
+    : elseEntries // 链式递归（无显式 else_path）时由内层分支自行标记
+
   return [
     // [0] AST literal → 寄存器
     makeMove(
@@ -233,20 +246,20 @@ function compileBranch(
       createdAt: now(),
       kind: 'conditional_skip',
       conditionAddr: { kind: 'internal', name: judgeReg(j.id) },
-      n: thenEntries.length + 1
+      n: thenMarked.length + 1
     },
-    // [3..] THEN
-    ...thenEntries,
+    // [3..] THEN（含路径标记）
+    ...thenMarked,
     // [.] THEN 尾部：跳过 ELSE
     {
       id: generateId('skip'),
       parentIntentId: null,
       createdAt: now(),
       kind: 'skip_n',
-      n: elseEntries.length
+      n: elseMarked.length
     },
-    // [..] ELSE
-    ...elseEntries
+    // [..] ELSE（含路径标记）
+    ...elseMarked
   ]
 }
 
