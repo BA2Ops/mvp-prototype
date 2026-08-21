@@ -199,6 +199,17 @@ export interface Experience {
   /** 目标操作（必有）—— 至少一个 base_op */
   target_op: TargetOp
 
+  /**
+   * 异常处置标志（D-C4-5，默认 false）
+   *
+   * true  = 本经验内的异常由后续指令检查 $r_err 处理（L1 不冒泡，截获在此层）
+   * false = 默认：异常由 L1 递归向上冒泡
+   *
+   * 由 LLM 在生成经验时根据业务语义设置（如「读文件失败要给默认值」设 true）。
+   * 编译器把它写入嵌套 IntentEntry.handleError；根帧由调用方读取。
+   */
+  handleError?: boolean
+
   /** 用户反馈历史（MVP 仅存储，不自动演化）*/
   feedback_history?: FeedbackRecord[]
 }
