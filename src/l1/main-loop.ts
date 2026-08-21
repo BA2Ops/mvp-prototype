@@ -1,29 +1,35 @@
 /**
- * L1 调度器主循环（5-case dispatch，双区架构版）
+ * L1 调度器主循环（5-case dispatch + 异常冒泡，双区架构版）
  *
  * @see ../../docs/mvp/10-reactive-execution-model.md §三
- * @see ../../docs/mvp/11-prototype-implementation-plan.md Phase A9
+ * @see ../../docs/mvp/11-prototype-implementation-plan.md Phase A9/A10
  *
  * 职责：
  * - 接收根意图 + ExecutionState
- * - 压入根意图 entry
+ * - 压入根意图 entry（帧）
  * - 循环 dispatch 栈顶 entry（5-case 严格穷尽）
  * - 栈空 → 执行完成
  *
- * 错误处理（A9 骨架版）：
- * - 硬错误直接向上传播（不 catch）
- * - A10 将接入 propagateHardError 做栈清理
+ * 异常冒泡（2026-08-20 修订，错误处置权在 L3）：
+ * - 任何 primitive 抛出的异常由主循环 catch
+ * - 异常信息写入 $r_err（errorToOperationError）
+ * - 从栈顶向上弹出 entries，直到遇到 handleError=true 的 IntentEntry 帧
+ *   - 遇到 → 截获：pop 该帧，继续执行其后指令（后续指令读 $r_err 判断）
+ *   - 无 → 递归冒泡到栈空 → 抛给 mainLoop 调用者
+ * - 弹出过程中，被穿过的 IntentEntry 帧标记 phase='aborted'
  *
  * 与 CPU 类比：
  * - l1MainLoop = CPU 取指-译码-执行循环
- * - execute_intent = CALL（L3 编译子程序，压入 children）
- * - 栈空 = 程序结束（HLT）
+ * - execute_intent = CALL（帧保留）
+ * - handleError 帧 = 异常处理器（try 块）
+ * - 异常冒泡 = 异常展开（unwinding）
  */
 
-import type { RecognizedIntent, StackEntry } from './types.js'
+import type { RecognizedIntent, StackEntry, IntentEntry, Value } from './types.js'
 import type { ExecutionState } from './execution-state.js'
-import { assertNever } from './types.js'
+import { assertNever, isIntentEntry } from './types.js'
 import { generateId, now } from './id.js'
+import { ERROR_REGISTER, errorToOperationError } from '../l2/errors.js'
 import { executeMove } from './primitives/move.js'
 import { executeOp } from './primitives/execute-op.js'
 import { executeIntent } from './primitives/execute-intent.js'
@@ -37,6 +43,16 @@ export class L1MaxStepsError extends Error {
   constructor(steps: number) {
     super(`L1 main loop exceeded max steps (${steps})`)
     this.name = 'L1MaxStepsError'
+  }
+}
+
+/**
+ * 无异常处理器时冒泡到顶层的错误
+ */
+export class UnhandledError extends Error {
+  constructor(message: string, public cause?: Error) {
+    super(message)
+    this.name = 'UnhandledError'
   }
 }
 
@@ -55,13 +71,15 @@ export interface L1RunOptions {
 }
 
 /**
- * 创建根意图 entry
+ * 创建根意图 entry（帧）
  *
  * @param intent 根意图
+ * @param handleError 根层是否截获异常（默认 false：异常冒泡给调用者）
  * @returns 压入栈的 IntentEntry（phase: pending）
  */
 export function createRootIntentEntry(
-  intent: RecognizedIntent
+  intent: RecognizedIntent,
+  handleError: boolean = false
 ): StackEntry {
   return {
     id: generateId('intent'),
@@ -70,8 +88,134 @@ export function createRootIntentEntry(
     kind: 'execute_intent',
     intent,
     phase: 'pending',
-    children: []
+    children: [],
+    handleError
   }
+}
+
+/**
+ * 处理 execute_intent 条目（双 phase 状态机）
+ *
+ * @param top 栈顶 IntentEntry
+ * @param state 执行状态
+ *
+ * pending：首次遇到 → compile + push children（帧保留）
+ * awaiting_children：children 全部执行完（栈顶回到帧）→ done + pop
+ */
+async function processIntentEntry(
+  top: IntentEntry,
+  state: ExecutionState
+): Promise<void> {
+  if (top.phase === 'pending') {
+    await executeIntent(top, state)
+    return
+  }
+
+  if (top.phase === 'awaiting_children') {
+    // children 已全部执行完（栈顶回到帧）
+    // 注：异常冒泡会直接把帧 pop 并标记 aborted，因此到达这里的
+    // awaiting_children 帧必然正常完成了 children
+    top.phase = 'done'
+    state.stack.pop()
+    return
+  }
+
+  // aborted：不应在主循环中再次遇到（冒泡时已被 pop）
+  /* v8 ignore next 3 -- 防御代码：aborted 帧在冒泡时已被弹出，运行时不可达 */
+  throw new Error(`execute_intent frame in unexpected phase: ${top.phase}`)
+}
+
+/**
+ * 异常冒泡（错误处置权在 L3）
+ *
+ * 语义（用户 2026-08-20 确认）：
+ * - 异常点 entry（栈顶）首先弹出
+ * - 从栈顶向下找**最近的 handleError 帧**（handler）
+ * - 无 handler → 全部弹出（标记 aborted）→ 返回 false（调用者处理）
+ * - 有 handler → 保留 handler 帧及其调用链（栈底方向），
+ *   以及 handler 的剩余 children（catch 逻辑，位于 handler 之上的非帧 entries）；
+ *   弹出 handler 之上的无标志帧链（异常子树）
+ *
+ * 栈结构约定：
+ *   帧的 children 压栈时紧贴帧之上；执行顺序 = 从栈顶向栈底
+ *   [.., handlerFrame, handlerChildren..., childFrame(无标志), childChildren..., op(异常点)]
+ *
+ * @param err 原始异常
+ * @param state 执行状态
+ * @returns true = 异常被某层截获（主循环继续）；false = 无处理器（调用者处理）
+ */
+export async function bubbleError(
+  err: unknown,
+  state: ExecutionState
+): Promise<boolean> {
+  // ============ Step 1: 异常信息写入 $r_err ============
+  // 后续指令（catch 逻辑）通过 $r_err 内容判断处理路径
+  // 注：OperationError 是合法业务数据（满足 Value 语义），但 TS interface
+  //     无 index signature，赋给 Value 需要断言
+  state.internalStore.set(
+    ERROR_REGISTER,
+    errorToOperationError(err) as unknown as Value
+  )
+
+  // ============ Step 2: 弹出异常点 entry ============
+  // 主循环 catch 时栈顶即抛错者（primitive 抛错时未 pop）
+  if (state.stack.length > 0) {
+    state.stack.pop()
+  }
+
+  // ============ Step 3: 从栈顶向下找最近的 handleError 帧 ============
+  let handlerIndex = -1
+  for (let i = state.stack.length - 1; i >= 0; i--) {
+    const e = state.stack[i]
+    if (isIntentEntry(e) && e.handleError) {
+      handlerIndex = i
+      break
+    }
+  }
+
+  // ============ Step 4: 无 handler → 全部弹出，返回 false ============
+  if (handlerIndex === -1) {
+    for (const e of state.stack) {
+      if (isIntentEntry(e)) e.phase = 'aborted'
+    }
+    state.stack.length = 0
+    return false
+  }
+
+  // ============ Step 5: 有 handler → 保留 handler 调用链 + handler 剩余 children ============
+  // 保留：[0..handlerIndex]（handler 及其调用链）
+  const keepIds = new Set<string>()
+  for (let i = 0; i <= handlerIndex; i++) {
+    keepIds.add(state.stack[i].id)
+  }
+
+  // handler 之上（栈顶方向）：mode 切换
+  // keep  = handler 的剩余 children（catch 逻辑，保留）
+  // drop  = 无标志帧及其 children（异常子树，弹出）
+  let mode: 'keep' | 'drop' = 'keep'
+  for (let i = handlerIndex + 1; i < state.stack.length; i++) {
+    const e = state.stack[i]
+    if (isIntentEntry(e)) {
+      if (!e.handleError) {
+        // 无标志帧：弹出（其 children 也 drop）
+        e.phase = 'aborted'
+        mode = 'drop'
+      }
+      // 防御：handler 之上不应再出现 handler（最近的 handler 已找到）
+      /* v8 ignore next 3 -- 防御代码：栈顶向下第一个 handler 之后的 handler 帧不可能出现 */
+      else {
+        mode = 'keep'
+      }
+    } else if (mode === 'keep') {
+      // handler 的剩余 children：保留（catch 逻辑）
+      keepIds.add(e.id)
+    }
+    // drop 模式下的非帧 entry：不加入 keepIds（弹出）
+  }
+
+  // ============ Step 6: 重建栈 ============
+  state.stack = state.stack.filter(e => keepIds.has(e.id))
+  return true
 }
 
 /**
@@ -84,12 +228,8 @@ export function createRootIntentEntry(
  * 流程：
  * 1. 压入根意图 entry
  * 2. 循环：peek 栈顶 → switch(kind) dispatch
- * 3. 栈空 → 完成
- *
- * 终止保证：
- * - MVP 无反向跳转，每次迭代要么 pop（move/op/intent/skip/cond-skip）
- *   要么 push 有限 children（intent）
- * - maxSteps 防御意外深展开
+ * 3. 任何异常 → bubbleError（冒泡/截获）
+ * 4. 栈空 → 完成
  */
 export async function l1MainLoop(
   rootIntent: RecognizedIntent,
@@ -104,6 +244,8 @@ export async function l1MainLoop(
 
   while (state.stack.length > 0) {
     // 防御：步数超限（避免意外无限循环）
+    // 注：此检查在 try 之外——L1MaxStepsError 是系统错误，
+    //     不应被业务冒泡（handleError）截获，直接抛给调用者
     if (options?.maxSteps !== undefined && steps >= options.maxSteps) {
       throw new L1MaxStepsError(steps)
     }
@@ -112,32 +254,45 @@ export async function l1MainLoop(
     // 取栈顶（下一个要执行的 entry）
     const top = state.stack[state.stack.length - 1]
 
-    // ====== 5-case 严格穷尽 dispatch ======
-    switch (top.kind) {
-      case 'move':
-        await executeMove(top, state)
-        break
+    try {
+      // ====== 5-case 严格穷尽 dispatch ======
+      switch (top.kind) {
+        case 'move':
+          await executeMove(top, state)
+          break
 
-      case 'execute_op':
-        await executeOp(top, state)
-        break
+        case 'execute_op':
+          await executeOp(top, state)
+          break
 
-      case 'execute_intent':
-        await executeIntent(top, state)
-        break
+        case 'execute_intent':
+          await processIntentEntry(top, state)
+          break
 
-      case 'skip_n':
-        await executeSkipN(top, state)
-        break
+        case 'skip_n':
+          await executeSkipN(top, state)
+          break
 
-      case 'conditional_skip':
-        await executeConditionalSkip(top, state)
-        break
+        case 'conditional_skip':
+          await executeConditionalSkip(top, state)
+          break
 
-      default:
-        /* v8 ignore next 2 -- 防御代码：编译期穷尽检查，运行时不可达（TS 保证 5 种 kind 全部处理）*/
-        // 编译期穷尽检查：新增 primitive kind 必须在此处理
-        assertNever(top)
+        default:
+          /* v8 ignore next 2 -- 防御代码：编译期穷尽检查，运行时不可达（TS 保证 5 种 kind 全部处理）*/
+          // 编译期穷尽检查：新增 primitive kind 必须在此处理
+          assertNever(top)
+      }
+    } catch (err) {
+      // ====== 异常冒泡：处置权在 L3（handleError 标志）======
+      const handled = await bubbleError(err, state)
+      if (!handled) {
+        // 无任何层截获 → 抛给 mainLoop 调用者
+        throw new UnhandledError(
+          `Unhandled error in L1 main loop: ${err instanceof Error ? err.message : String(err)}`,
+          err instanceof Error ? err : undefined
+        )
+      }
+      // 截获：$r_err 已写入异常信息，继续主循环（后续指令判断）
     }
   }
 }

@@ -294,9 +294,9 @@ describe('A9: l1MainLoop（5-case dispatch，双区架构版）', () => {
         // 预期错误
       }
 
-      // A9 骨架：错误直接传播，栈清理留给 A10
-      // 此时栈残留 throwing_op entry（在栈顶）
-      expect(state.stack.length).toBeGreaterThan(0)
+      // 新语义：根意图无 handleError → 异常冒泡到栈空 → UnhandledError
+      // 栈应被完全清理（冒泡弹出所有 entries）
+      expect(state.stack.length).toBe(0)
     })
 
     test('L3 compile 抛错 → 向上传播', async () => {

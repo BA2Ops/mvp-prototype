@@ -120,7 +120,9 @@ export function createProgrammableL3(): ProgrammableL3 {
     },
     compile: async (intent: RecognizedIntent) => {
       const children = childrenMap.get(intent.type) ?? []
-      return children
+      // 模拟真实 L3：每次 compile 返回**新的** entries（新 ID）
+      // 不能返回同一引用——递归/多次调用会共享 entry 对象，phase 互相污染
+      return structuredClone(children)
     },
     getExperience: (id: string) => experiences.get(id) ?? null,
     recordFeedback: async (id: string, feedback: FeedbackRecord) => {
@@ -135,7 +137,7 @@ export function createProgrammableL3(): ProgrammableL3 {
       _errorInfo: ErrorInfo
     ) => {
       const children = childrenMap.get(intent.type) ?? []
-      return children
+      return structuredClone(children)
     }
   }
 }

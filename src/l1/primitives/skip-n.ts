@@ -21,6 +21,7 @@
 
 import type { SkipN } from '../types.js'
 import type { ExecutionState } from '../execution-state.js'
+import { isIntentEntry } from '../types.js'
 
 /**
  * 错误：skip_n 参数非法
@@ -41,6 +42,7 @@ export class SkipNError extends Error {
  * 行为：
  * 1. 校验 n >= 0（MVP 约束）
  * 2. 循环 (n+1) 次 pop（如果栈空则提前退出）
+ * 3. **不跨帧**：遇到 IntentEntry 帧停止弹出（保护调用帧结构）
  *
  * 错误处理：
  * - n < 0：抛 SkipNError（MVP 范围外）
@@ -58,9 +60,12 @@ export async function executeSkipN(
 
   // 弹出 self + n 个 entry（总 n+1 个）
   // 如果栈不足，弹空为止（graceful）
+  // 如果遇到 IntentEntry 帧，停止弹出（不跨帧，保护调用边界）
   const totalPops = entry.n + 1
   for (let i = 0; i < totalPops; i++) {
     if (state.stack.length === 0) break
+    // 不跨帧：弹出前检查栈顶是否是帧
+    if (isIntentEntry(state.stack[state.stack.length - 1])) break
     state.stack.pop()
   }
 }

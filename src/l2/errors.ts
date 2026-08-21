@@ -12,6 +12,8 @@
  * - 轻量：不强制 details（可选）
  */
 
+import type { Value } from '../l1/types.js'
+
 /**
  * 标准 OperationError 结构
  *
@@ -33,8 +35,8 @@ export interface OperationError {
   /** 错误产生时间戳（毫秒）*/
   timestamp: number
 
-  /** 可选的额外上下文 */
-  details?: unknown
+  /** 可选的额外上下文（必须是 Value，保证可写入 internalStore）*/
+  details?: Value
 }
 
 /**
@@ -43,13 +45,13 @@ export interface OperationError {
  * @param code 错误代码
  * @param message 错误消息
  * @param op operation 名称
- * @param details 可选额外上下文
+ * @param details 可选额外上下文（必须是 Value）
  */
 export function createOperationError(
   code: string,
   message: string,
   op: string,
-  details?: unknown
+  details?: Value
 ): OperationError {
   return {
     code,
@@ -101,3 +103,39 @@ export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes] | string
  * $r_err 是全局共享的，最后一个 op 写入的 error 会覆盖之前的。
  */
 export const ERROR_REGISTER = '$r_err'
+
+/**
+ * 把任意异常转换为标准 OperationError
+ *
+ * 用于 L1 异常冒泡截获时写入 $r_err（异常消息寄存器）。
+ *
+ * 设计原则（2026-08-20 修订）：
+ * - 解释执行下，错误处置权在 L3（通过 handleError 标志）
+ * - 异常冒泡截获时，L1 把异常转为 OperationError 写入 $r_err
+ * - 后续指令（catch 逻辑）通过 $r_err 内容判断处理路径
+ * - 保留原始错误码（如 ENOENT）：Error 对象上的 code 字段优先
+ *
+ * @param err 任意异常
+ * @param op 产生异常的操作名（默认 'l1'）
+ * @returns 标准 OperationError
+ */
+export function errorToOperationError(
+  err: unknown,
+  op: string = 'l1'
+): OperationError {
+  if (isOperationError(err)) {
+    // 已经是 OperationError（如 L2 op 主动返回的结构化错误）
+    return err
+  }
+
+  const e = err instanceof Error ? err : new Error(String(err))
+  const rawCode = (e as { code?: unknown }).code
+
+  return {
+    // 保留原始错误码（ENOENT/EACCES 等），无则用通用码
+    code: typeof rawCode === 'string' && rawCode.length > 0 ? rawCode : 'EXCEPTION',
+    message: e.message,
+    op,
+    timestamp: Date.now()
+  }
+}

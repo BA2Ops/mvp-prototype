@@ -39,7 +39,8 @@ describe('A0g: Mock L3（Experience 模型版）', () => {
         { type: 'test', params: {} },
         {} as any
       )
-      expect(result).toBe(children)
+      // 值相等（真实 L3 每次 compile 返回新 entries）
+      expect(result).toEqual(children)
     })
 
     test('getExperience 默认返回 null', () => {
@@ -148,8 +149,9 @@ describe('A0g: Mock L3（Experience 模型版）', () => {
       const r1 = await l3.compile({ type: 'op1', params: {} }, {} as any)
       const r2 = await l3.compile({ type: 'op2', params: {} }, {} as any)
 
-      expect(r1).toBe(children1)
-      expect(r2).toBe(children2)
+      // 值相等（compile 返回新 entries 拷贝）
+      expect(r1).toEqual(children1)
+      expect(r2).toEqual(children2)
     })
 
     test('未注册的 type 返回空数组', async () => {
@@ -222,7 +224,8 @@ describe('A0g: Mock L3（Experience 模型版）', () => {
         }
       )
 
-      expect(result).toBe(fallbackChildren)
+      // 值相等（compile 返回新 entries 拷贝）
+      expect(result).toEqual(fallbackChildren)
     })
   })
 

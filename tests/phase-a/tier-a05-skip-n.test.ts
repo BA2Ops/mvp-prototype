@@ -29,6 +29,44 @@ describe('A5: skip_n primitive', () => {
     state = createInitialState(l2, l3)
   })
 
+  // ============== 帧边界保护（2026-08-20 新增）==============
+  describe('帧边界保护（不跨 IntentEntry 帧）', () => {
+    test('弹出时遇到帧 → 停止（不跨帧）', async () => {
+      // 栈：[frame(IntentEntry), m1, m2, self]（self 栈顶）
+      const frame: StackEntry = {
+        id: 'frame', parentIntentId: null, createdAt: now(),
+        kind: 'execute_intent', intent: { type: 'x', params: {} },
+        phase: 'awaiting_children', children: [], handleError: false
+      }
+      const m1 = createOp('m1')
+      const m2 = createOp('m2')
+      const self = createOp('self')
+      state.stack.push(frame, m1, m2, self)
+
+      // n=3：期望弹出 self + 3 个，但遇到 frame 停止
+      await executeSkipN({ id: 'sn', parentIntentId: null, createdAt: 0, kind: 'skip_n', n: 3 }, state)
+
+      // 弹出 self, m2, m1，停在 frame 前
+      expect(state.stack.map(e => e.id)).toEqual(['frame'])
+      expect(state.stack[0].id).toBe('frame')
+    })
+
+    test('n 足够大也不跨帧（栈中保留帧）', async () => {
+      const frame: StackEntry = {
+        id: 'frame', parentIntentId: null, createdAt: now(),
+        kind: 'execute_intent', intent: { type: 'x', params: {} },
+        phase: 'awaiting_children', children: [], handleError: false
+      }
+      const m1 = createOp('m1')
+      const self = createOp('self')
+      state.stack.push(frame, m1, self)
+
+      await executeSkipN({ id: 'sn', parentIntentId: null, createdAt: 0, kind: 'skip_n', n: 100 }, state)
+
+      expect(state.stack.map(e => e.id)).toEqual(['frame'])
+    })
+  })
+
   // ============== 基本行为 ==============
   describe('基本行为', () => {
     test('n=0：仅弹出 self（1 个）', async () => {

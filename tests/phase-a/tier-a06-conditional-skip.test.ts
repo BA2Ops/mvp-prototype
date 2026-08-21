@@ -36,6 +36,31 @@ describe('A6: conditional_skip primitive（双区架构版）', () => {
     state = createInitialState(l2, l3)
   })
 
+  // ============== 帧边界保护（2026-08-20 新增）==============
+  describe('帧边界保护（不跨 IntentEntry 帧）', () => {
+    test('条件为真且 n 足够大 → 停在帧前', async () => {
+      // 栈：[frame(IntentEntry), m1, self]（self 栈顶），$r_flag = true
+      state.internalStore.set('$r_flag', true)
+      const frame: StackEntry = {
+        id: 'frame', parentIntentId: null, createdAt: now(),
+        kind: 'execute_intent', intent: { type: 'x', params: {} },
+        phase: 'awaiting_children', children: [], handleError: false
+      }
+      const m1 = createMarker('m1')
+      const self = createMarker('self')
+      state.stack.push(frame, m1, self)
+
+      await executeConditionalSkip(
+        { id: 'cs', parentIntentId: null, createdAt: 0,
+          kind: 'conditional_skip', conditionAddr: { kind: 'internal', name: '$r_flag' }, n: 5 },
+        state
+      )
+
+      // 弹出 self, m1，停在 frame 前
+      expect(state.stack.map(e => e.id)).toEqual(['frame'])
+    })
+  })
+
   // ============== isTruthy helper ==============
   describe('isTruthy helper', () => {
     test('null/undefined → false', () => {

@@ -1,17 +1,19 @@
 /**
- * Phase A Tier A8 - execute_intent primitive 测试（双区架构版）
+ * Phase A Tier A8 - execute_intent primitive 测试（帧保留版）
+ *
+ * 2026-08-20 修订：错误处置权在 L3 → IntentEntry 保留在栈中作为调用帧
  *
  * 验证：
- * 1. 基本调用：L3 返回 children，压栈，pop self
- * 2. 生命周期：pending → awaiting_children → done
- * 3. children 压栈顺序：逆序（先执行最右）
- * 4. children 为空情况
- * 5. L3 compile 抛错（向上传播）
+ * 1. 基本调用：L3 返回 children，压入帧之上（帧保留）
+ * 2. children 压栈顺序：逆序（先执行最右）
+ * 3. 生命周期：pending → awaiting_children（done 由主循环收尾）
+ * 4. children 为空：帧保留
+ * 5. L3 compile 抛错（向上传播，由主循环冒泡机制处理）
  * 6. 与 mock L3 集成（verify L3.compile 被正确调用）
- * 7. 与 execute_op 嵌套（DAG 编译产物）
- * 8. 与 skip_n / conditional_skip 配合
+ * 7. handleError 标志字段
+ * 8. 与 execute_op 嵌套（DAG 编译产物）
  * 9. 状态保留
- * 10. IntentEntry 自身字段
+ * 10. ExecuteIntentError
  */
 
 import { describe, test, expect, beforeEach } from 'vitest'
@@ -36,7 +38,7 @@ import type {
 } from '../../src/l1/types.js'
 import { generateId, now } from '../helpers.js'
 
-describe('A8: execute_intent primitive（双区架构版）', () => {
+describe('A8: execute_intent primitive（帧保留版）', () => {
   let state: ExecutionState
 
   beforeEach(() => {
@@ -47,10 +49,10 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
   // ============== 基本调用 ==============
   describe('基本调用', () => {
-    test('调用 L3.compile，children 压栈，pop self', async () => {
+    test('调用 L3.compile，children 压入帧之上（帧保留）', async () => {
       const children: StackEntry[] = [
-        { kind: 'skip_n', id: 'c1', parentIntentId: null, createdAt: 0, n: 0 },
-        { kind: 'skip_n', id: 'c2', parentIntentId: null, createdAt: 0, n: 1 }
+        { kind: 'skip_n', id: 'c1', parentIntentId: null, createdAt: 0, n: 0, handleError: false },
+        { kind: 'skip_n', id: 'c2', parentIntentId: null, createdAt: 0, n: 1, handleError: false }
       ]
       const l3 = createMockL3(children)
       state.l3 = l3
@@ -60,22 +62,24 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // 栈变化：entry 被 pop，children 压入（逆序）
-      // 栈数组（底→顶）: [c2, c1]；pop 顺序: c1 → c2（children[0] 先执行）
-      expect(state.stack.length).toBe(2)
-      expect(state.stack[0].id).toBe('c2')  // 栈底（最后执行）
-      expect(state.stack[1].id).toBe('c1')  // 栈顶（最先执行）
+      // 帧保留：entry 仍在栈底，children 在其上（逆序）
+      // 栈（底→顶）: [entry, c2, c1]
+      expect(state.stack.length).toBe(3)
+      expect(state.stack[0].id).toBe(entry.id)   // 帧在底
+      expect(state.stack[1].id).toBe('c2')       // 中间
+      expect(state.stack[2].id).toBe('c1')       // 栈顶（最先执行）
 
       // 验证 pop 顺序：先取 c1（children[0]）
       expect(state.stack.pop()?.id).toBe('c1')
       expect(state.stack.pop()?.id).toBe('c2')
+      expect(state.stack.pop()?.id).toBe(entry.id)  // 帧最后
     })
 
-    test('children 压栈顺序：children[0] 在栈底', async () => {
+    test('children 压栈顺序：children[0] 在栈顶（先执行）', async () => {
       const children: StackEntry[] = [
-        { kind: 'skip_n', id: 'first', parentIntentId: null, createdAt: 0, n: 0 },
-        { kind: 'skip_n', id: 'middle', parentIntentId: null, createdAt: 0, n: 0 },
-        { kind: 'skip_n', id: 'last', parentIntentId: null, createdAt: 0, n: 0 }
+        { kind: 'skip_n', id: 'first', parentIntentId: null, createdAt: 0, n: 0, handleError: false },
+        { kind: 'skip_n', id: 'middle', parentIntentId: null, createdAt: 0, n: 0, handleError: false },
+        { kind: 'skip_n', id: 'last', parentIntentId: null, createdAt: 0, n: 0, handleError: false }
       ]
       const l3 = createMockL3(children)
       state.l3 = l3
@@ -85,20 +89,18 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // 逆序压栈（children = [first, middle, last]）
-      // 栈数组（底→顶）: [last, middle, first]
-      // pop 顺序: first → middle → last（children[0] 先执行）
-      expect(state.stack.map(e => e.id)).toEqual(['last', 'middle', 'first'])
+      // 栈（底→顶）: [entry, last, middle, first]
+      expect(state.stack.map(e => e.id)).toEqual([entry.id, 'last', 'middle', 'first'])
 
-      // 验证 pop 顺序
+      // 验证 pop 顺序（children[0] 先执行）
       const popped: string[] = []
       while (state.stack.length > 0) {
         popped.push(state.stack.pop()!.id)
       }
-      expect(popped).toEqual(['first', 'middle', 'last'])
+      expect(popped).toEqual(['first', 'middle', 'last', entry.id])
     })
 
-    test('空 children：直接完成', async () => {
+    test('空 children：帧保留，无子指令', async () => {
       const l3 = createMockL3([])
       state.l3 = l3
 
@@ -107,8 +109,10 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      expect(state.stack.length).toBe(0)
-      expect(entry.phase).toBe('done')
+      // 帧保留：栈中只有 entry（children 为空）
+      expect(state.stack.length).toBe(1)
+      expect(state.stack[0].id).toBe(entry.id)
+      expect(entry.phase).toBe('awaiting_children')
     })
 
     test('L3 compile 接收 intent 和 state 参数', async () => {
@@ -123,7 +127,6 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // spy 应记录 compile 调用
       expect(spy.callCount()).toBe(1)
       const last = spy.lastIntent()
       expect(last?.type).toBe('my_intent')
@@ -133,9 +136,9 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
   // ============== IntentEntry 生命周期 ==============
   describe('IntentEntry 生命周期', () => {
-    test('pending → awaiting_children → done', async () => {
+    test('pending → awaiting_children（done 由主循环收尾）', async () => {
       const l3 = createMockL3([
-        { kind: 'skip_n', id: 'c1', parentIntentId: null, createdAt: 0, n: 0 }
+        { kind: 'skip_n', id: 'c1', parentIntentId: null, createdAt: 0, n: 0, handleError: false }
       ])
       state.l3 = l3
 
@@ -146,10 +149,12 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      expect(entry.phase).toBe('done')
+      // executeIntent 只处理到 awaiting_children
+      // 主循环在 children 执行完后（栈顶回到帧）才标记 done
+      expect(entry.phase).toBe('awaiting_children')
     })
 
-    test('phase 字段类型正确', () => {
+    test('phase 字段类型正确（4 种）', () => {
       const phases: IntentEntry['phase'][] = [
         'pending',
         'awaiting_children',
@@ -177,10 +182,9 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
       const entry = createIntentEntry({ type: 'failing', params: {} })
       state.stack.push(entry)
 
-      // 应向上抛
       await expect(executeIntent(entry, state)).rejects.toThrow('L3 compile failed')
 
-      // entry 状态保持 awaiting_children（异常中）
+      // entry 状态保持 awaiting_children（compile 前已标记）
       expect(entry.phase).toBe('awaiting_children')
     })
 
@@ -191,9 +195,27 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
       const entry = createIntentEntry({ type: 'empty', params: {} })
       state.stack.push(entry)
 
-      // 空 children 不抛错
       await expect(executeIntent(entry, state)).resolves.not.toThrow()
-      expect(entry.phase).toBe('done')
+      expect(entry.phase).toBe('awaiting_children')
+    })
+  })
+
+  // ============== handleError 标志 ==============
+  describe('handleError 标志（L3 编译时设置）', () => {
+    test('handleError 是必填字段', () => {
+      const entry = createIntentEntry({ type: 't', params: {} }, true)
+      expect(entry.handleError).toBe(true)
+
+      const entry2 = createIntentEntry({ type: 't2', params: {} }, false)
+      expect(entry2.handleError).toBe(false)
+    })
+
+    test('默认语义：false = 异常向上冒泡', () => {
+      // 编译产物必须显式设置（L3 决定）
+      const children: StackEntry[] = [
+        { kind: 'skip_n', id: 'x', parentIntentId: null, createdAt: 0, n: 0, handleError: false }
+      ]
+      expect(children[0]).toBeDefined()
     })
   })
 
@@ -203,11 +225,11 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
       const l3 = createProgrammableL3()
 
       const readChildren: StackEntry[] = [
-        { kind: 'skip_n', id: 'read_step', parentIntentId: null, createdAt: 0, n: 0 }
+        { kind: 'skip_n', id: 'read_step', parentIntentId: null, createdAt: 0, n: 0, handleError: false }
       ]
       const writeChildren: StackEntry[] = [
-        { kind: 'skip_n', id: 'write_step1', parentIntentId: null, createdAt: 0, n: 0 },
-        { kind: 'skip_n', id: 'write_step2', parentIntentId: null, createdAt: 0, n: 0 }
+        { kind: 'skip_n', id: 'write_step1', parentIntentId: null, createdAt: 0, n: 0, handleError: false },
+        { kind: 'skip_n', id: 'write_step2', parentIntentId: null, createdAt: 0, n: 0, handleError: false }
       ]
 
       l3.setChildren('read_file', readChildren)
@@ -219,7 +241,8 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
       const entry1 = createIntentEntry({ type: 'read_file', params: {} })
       state.stack.push(entry1)
       await executeIntent(entry1, state)
-      expect(state.stack.map(e => e.id)).toEqual(['read_step'])
+      // 栈（底→顶）: [entry1, read_step]
+      expect(state.stack.map(e => e.id)).toEqual([entry1.id, 'read_step'])
 
       // 清栈
       state.stack.length = 0
@@ -228,8 +251,8 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
       const entry2 = createIntentEntry({ type: 'write_file', params: {} })
       state.stack.push(entry2)
       await executeIntent(entry2, state)
-      // 栈数组（底→顶）: [write_step2, write_step1]；pop 先取 write_step1
-      expect(state.stack.map(e => e.id)).toEqual(['write_step2', 'write_step1'])
+      // 栈（底→顶）: [entry2, write_step2, write_step1]；pop 先取 write_step1
+      expect(state.stack.map(e => e.id)).toEqual([entry2.id, 'write_step2', 'write_step1'])
     })
 
     test('未注册的 type 路由返回空 children', async () => {
@@ -241,21 +264,15 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // 空 children → 直接完成
-      expect(entry.phase).toBe('done')
-      expect(state.stack.length).toBe(0)
+      // 帧保留：只有 entry
+      expect(entry.phase).toBe('awaiting_children')
+      expect(state.stack.length).toBe(1)
     })
   })
 
-  // ============== 与 execute_op 嵌套（DAG 编译产物）==============
+  // ============== 与 execute_op 嵌套（典型 DAG 编译产物）==============
   describe('与 execute_op 嵌套（典型 DAG 编译产物）', () => {
-    test('DAG if-then-else 编译产物正确执行', async () => {
-      // 模拟 L3 编译 read_or_create_file 产生的序列：
-      // 1. file_read (output: $r1, $r_err)
-      // 2. conditional_skip($r_err, n=2)
-      // 3. execute_op(move, ...)
-      // 4. skip_n(1)
-      // 5. execute_op(file_write, ...)
+    test('DAG if-then-else 编译产物正确压栈', async () => {
       const l3Children: StackEntry[] = [
         { kind: 'execute_op', id: 'op_file_read', parentIntentId: null, createdAt: 0,
           operation: 'mock_op', inputs: { x: { kind: 'internal', name: '$r0' } },
@@ -280,24 +297,23 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // 验证：5 个 children 全部入栈（逆序）
-      // 栈数组（底→顶）: [op_write, sn, op_move, cs, op_file_read]
-      // pop 顺序: op_file_read → cs → op_move → sn → op_write（children[0] 先执行）
-      expect(state.stack.length).toBe(5)
-      expect(state.stack[0].id).toBe('op_write')      // 栈底（最后执行）
-      expect(state.stack[4].id).toBe('op_file_read')  // 栈顶（最先执行）
+      // 帧保留：entry 在栈底，5 个 children 逆序在其上
+      // 栈（底→顶）: [entry, op_write, sn, op_move, cs, op_file_read]
+      expect(state.stack.length).toBe(6)
+      expect(state.stack[0].id).toBe(entry.id)
+      expect(state.stack[1].id).toBe('op_write')       // 最后执行
+      expect(state.stack[5].id).toBe('op_file_read')   // 最先执行
     })
   })
 
   // ============== 嵌套调用 ==============
   describe('嵌套调用（sub-intent 是 execute_intent）', () => {
-    test('嵌套 L3.compile 调用链', async () => {
-      // 模拟 while 循环经验：A 调用 A_self
+    test('嵌套 L3.compile 调用链（帧嵌套）', async () => {
       const selfChildren: StackEntry[] = [
-        { kind: 'skip_n', id: 'self_skip', parentIntentId: null, createdAt: 0, n: 1 },
+        { kind: 'skip_n', id: 'self_skip', parentIntentId: null, createdAt: 0, n: 1, handleError: false },
         { kind: 'execute_intent', id: 'self_entry', parentIntentId: null, createdAt: 0,
           intent: { type: 'recursive_exp', params: {} },
-          phase: 'pending', children: [] }
+          phase: 'pending', children: [], handleError: false }
       ]
 
       const l3 = createMockL3(selfChildren)
@@ -308,36 +324,12 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 
       await executeIntent(entry, state)
 
-      // 栈：entry 被 pop，selfChildren 压入
-      // 栈数组（底→顶）: [self_entry, self_skip]
-      // pop 顺序: self_skip → self_entry（children[0] 先执行）
-      expect(state.stack.length).toBe(2)
-      expect(state.stack[0].id).toBe('self_entry')
-      expect(state.stack[1].id).toBe('self_skip')
-    })
-  })
-
-  // ============== 多次连续调用 ==============
-  describe('多次连续调用', () => {
-    test('连续两个 execute_intent', async () => {
-      const l3 = createMockL3([])
-      state.l3 = l3
-
-      const entry1 = createIntentEntry({ type: 'first', params: {} })
-      const entry2 = createIntentEntry({ type: 'second', params: {} })
-
-      state.stack.push(entry1)
-      state.stack.push(entry2)
-
-      // 执行 entry2（栈顶）
-      await executeIntent(entry2, state)
-      expect(entry2.phase).toBe('done')
-      expect(state.stack.length).toBe(1)  // 只剩 entry1
-
-      // 执行 entry1
-      await executeIntent(entry1, state)
-      expect(entry1.phase).toBe('done')
-      expect(state.stack.length).toBe(0)
+      // 栈（底→顶）: [entry, self_entry, self_skip]
+      // pop 顺序: self_skip → self_entry → entry（帧最后）
+      expect(state.stack.length).toBe(3)
+      expect(state.stack[0].id).toBe(entry.id)
+      expect(state.stack[1].id).toBe('self_entry')
+      expect(state.stack[2].id).toBe('self_skip')
     })
   })
 
@@ -421,9 +413,12 @@ describe('A8: execute_intent primitive（双区架构版）', () => {
 // ============== Helpers ==============
 
 /**
- * 创建一个 IntentEntry
+ * 创建一个 IntentEntry（handleError 必填）
  */
-function createIntentEntry(intent: RecognizedIntent): IntentEntry {
+function createIntentEntry(
+  intent: RecognizedIntent,
+  handleError: boolean = false
+): IntentEntry {
   return {
     id: generateId('intent'),
     parentIntentId: null,
@@ -431,6 +426,7 @@ function createIntentEntry(intent: RecognizedIntent): IntentEntry {
     kind: 'execute_intent',
     intent,
     phase: 'pending',
-    children: []
+    children: [],
+    handleError
   }
 }

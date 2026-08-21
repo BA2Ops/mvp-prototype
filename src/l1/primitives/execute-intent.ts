@@ -1,37 +1,34 @@
 /**
- * execute_intent primitive 执行函数（双区架构版）
+ * execute_intent primitive 执行函数（帧保留版）
  *
  * @see ../../docs/mvp/06-execution-layer.md §3.3
  * @see ../../docs/mvp/10-reactive-execution-model.md §三.4
  * @see ../../docs/mvp/12-experience-model.md
  *
+ * 2026-08-20 修订：帧保留语义（错误处置权在 L3）
+ *
  * 完整设计：
- * - 从 IntentEntry 读取 RecognizedIntent
- * - 调 state.l3.compile(intent, state, options?) 获取 children
- * - 把 children 压入指令栈（**逆序**，先执行最右）
- * - IntentEntry 标记 awaiting_children → done
- * - L3 compile 抛错 → 向上传播（propagateHardError）
+ * - **IntentEntry 保留在指令栈中作为调用帧**（不一次性 pop）
+ * - pending：调 state.l3.compile(intent, state) 获取 children，压入帧之上
+ * - children 执行完后，栈顶回到 IntentEntry（awaiting_children）→ 主循环标记 done + pop
+ * - 帧是异常冒泡的边界：handleError 标志决定异常在此截获还是继续向上
  *
  * 与 execute_op 的区别：
- * - execute_op: L1 → L2（调 operation.execute）
- * - execute_intent: L1 → L3（调 l3.compile）
+ * - execute_op: L1 → L2（调 operation.execute，一次完成）
+ * - execute_intent: L1 → L3（调 l3.compile，展开为子序列）
  *
  * 与 CPU 类比：
- * - execute_intent = CALL（调用子程序）
- * - L3 = 子程序编译/链接器
- * - children 压栈 = 参数压栈（隐式）
- *
- * 嵌套支持：
- * - sub-intent 是 execute_intent entry（自引用或调用其他经验）
- * - L1 主循环递归调 execute_intent
- * - 栈深度限制由 L1 监控（详见 doc 06 §11）
+ * - execute_intent = CALL（压入返回地址帧）
+ * - children = 子程序体
+ * - 帧保留 = 调用栈帧（异常展开沿帧向上）
+ * - handleError = 该帧注册了异常处理器（try 块）
  *
  * 生命周期：
- * - pending → awaiting_children → done（成功）
- * - pending → awaiting_children → aborted（失败）
+ * - pending → awaiting_children → done（正常完成）
+ * - pending → awaiting_children → aborted（异常冒泡截获/穿过）
  */
 
-import type { IntentEntry, StackEntry } from '../types.js'
+import type { IntentEntry } from '../types.js'
 import type { ExecutionState } from '../execution-state.js'
 
 /**
@@ -45,21 +42,24 @@ export class ExecuteIntentError extends Error {
 }
 
 /**
- * 执行 execute_intent primitive
+ * 执行 execute_intent primitive（pending 阶段）
  *
- * @param entry execute_intent 条目
+ * @param entry execute_intent 条目（phase 必须为 pending）
  * @param state 当前执行状态
  *
  * 行为：
- * 1. 标记 IntentEntry 为 awaiting_children
+ * 1. 标记 awaiting_children
  * 2. 调 state.l3.compile(entry.intent, state) 获取 children
- * 3. 把 children 压入指令栈（**逆序**）
- * 5. IntentEntry 标 done，pop
+ * 3. 把 children 压入指令栈（**逆序**，children[0] 先执行）
+ * 4. **不 pop 自身**——帧保留，等待 children 完成后由主循环收尾
  *
- * 错误处理：
- * - L3 compile 抛错 → 向上传播（不 catch，让 propagateHardError 处理）
- * - IntentEntry.intent 不是 RecognizedIntent → ExecuteIntentError（理论上类型保证不会发生）
- * - children 为空 → 正常完成（IntentEntry 标 done，pop）
+ * 错误处理（2026-08-20 修订）：
+ * - L3 compile 抛错 → 向上传播（由主循环 catch → 异常冒泡机制处理）
+ * - 本层是否截获异常由 entry.handleError 决定（主循环冒泡时判断）
+ *
+ * 注意：children 压入后，栈中顺序为 [entry(帧), ...children]（entry 在底）。
+ * 所有 children 执行完毕后栈顶回到 entry，主循环检测 phase==='awaiting_children'
+ * 且 children 已全部弹出 → 标记 done + pop。
  */
 export async function executeIntent(
   entry: IntentEntry,
@@ -69,26 +69,16 @@ export async function executeIntent(
   entry.phase = 'awaiting_children'
 
   // ============ Step 2: 调 L3 compile ============
-  // 硬错误会在这里 throw，让外层 catch 处理
+  // 异常会在这里 throw，由主循环 catch（冒泡机制）处理
   const children = await state.l3.compile(entry.intent, state)
+  entry.children = children
 
-  // ============ Step 3: pop 自身 ============
-  // 关键顺序：必须先 pop 自身（entry 在栈顶），再 push children
-  // 若先 push children 再 pop，会把刚压入的 children 弹出（pop 移除栈顶）
-  state.stack.pop()
-
-  // ============ Step 4: 把 children 压入指令栈（逆序）============
+  // ============ Step 3: 把 children 压入指令栈（逆序）============
   // 栈是 LIFO，要让 children[0] 先执行，需逆序压入
-  // 例如 children = [A, B, C]，栈顺序应该是 [A, B, C]（底→顶）
-  // 但 push() 添加到顶部，所以逆序迭代：
-  //   push(C) → [C]
-  //   push(B) → [B, C]
-  //   push(A) → [A, B, C]
-  // 这样 pop() 先取出 A，符合"先执行 children[0]"
+  // children = [A, B, C] → push(C) → push(B) → push(A)
+  // 栈（底→顶）: [entry, C, B, A] → pop 顺序 A → B → C ✓
   for (let i = children.length - 1; i >= 0; i--) {
     state.stack.push(children[i])
   }
-
-  // ============ Step 5: 标记 done ============
-  entry.phase = 'done'
+  // 注意：不 pop 自身（帧保留）
 }

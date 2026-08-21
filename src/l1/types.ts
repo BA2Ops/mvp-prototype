@@ -110,6 +110,16 @@ export interface IntentEntry extends BaseEntry {
   phase: 'pending' | 'awaiting_children' | 'done' | 'aborted'
   /** 编译后的子 entries */
   children: StackEntry[]
+  /**
+   * 异常处理标志（L3 编译时设置）
+   *
+   * true  = 本经验内的异常由后续指令检查 $r_err 处理（L1 不冒泡，截获在此层）
+   * false = 默认：异常由 L1 递归向上冒泡（弹出本层序列，直到遇到 handleError 层）
+   *
+   * 这是解释执行的错误处置权来源：是否捕捉/处理错误由 L3 的经验决定，
+   * 而非 L2 op 自己决定。
+   */
+  handleError: boolean
 }
 
 /**

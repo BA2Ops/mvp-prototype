@@ -34,7 +34,7 @@
 
 import type { ConditionalSkip } from '../types.js'
 import type { ExecutionState } from '../execution-state.js'
-import { isInternalAddress } from '../types.js'
+import { isInternalAddress, isIntentEntry } from '../types.js'
 
 /**
  * conditional_skip 参数错误
@@ -128,9 +128,11 @@ export async function executeConditionalSkip(
   // ============ Step 5: 弹栈 ============
   if (truthy) {
     // 条件为真：弹出 self + n 个后续 entry
+    // 不跨帧：遇到 IntentEntry 帧停止弹出（保护调用边界）
     const totalPops = entry.n + 1
     for (let i = 0; i < totalPops; i++) {
       if (state.stack.length === 0) break
+      if (isIntentEntry(state.stack[state.stack.length - 1])) break
       state.stack.pop()
     }
   } else {
