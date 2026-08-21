@@ -2,27 +2,12 @@
  * 测试通用工具
  *
  * 提供：
- * - ID 生成（用于 StackEntry）
- * - 当前时间（用于 createdAt）
+ * - ID 生成（复用生产代码 src/l1/id.ts）
+ * - 当前时间（复用生产代码 src/l1/id.ts）
+ * - baseEntry 帮助函数
  */
 
-/**
- * 生成唯一 ID
- *
- * 格式：`${prefix}_${counter}_${timestamp}`
- * 保证在单进程内唯一。
- */
-let counter = 0
-export function generateId(prefix: string = 'e'): string {
-  return `${prefix}_${++counter}_${Date.now().toString(36)}`
-}
-
-/**
- * 当前时间戳（毫秒）
- */
-export function now(): number {
-  return Date.now()
-}
+export { generateId, now } from '../src/l1/id.js'
 
 /**
  * 创建最小 StackEntry 基础字段
