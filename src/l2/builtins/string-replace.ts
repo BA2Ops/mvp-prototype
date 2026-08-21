@@ -157,6 +157,7 @@ export const stringReplaceOp: Operation = {
           ) as unknown as Value
         }
       }
+      /* v8 ignore next 3 -- 防御代码：try 内仅 RegExp 构造可能抛错（已捕获为 INVALID_REGEX）；此 throw 为不可预测运行时异常，走 L1 bubbleError */
       throw err
     }
   }

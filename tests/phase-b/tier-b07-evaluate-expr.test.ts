@@ -23,7 +23,7 @@ import { describe, expect, test } from 'vitest'
 import { l1MainLoop } from '../../src/l1/main-loop.js'
 import { createInitialState } from '../../src/l1/execution-state.js'
 import { L2Registry } from '../../src/l2/registry.js'
-import { evaluateExprOp, type Expr } from '../../src/l2/builtins/evaluate-expr.js'
+import { evaluateExprOp, type Expr, type OpName } from '../../src/l2/builtins/evaluate-expr.js'
 import { createProgrammableL3 } from '../../src/mocks/mock-l3.js'
 import type { Intent } from '../../src/l1/types.js'
 
@@ -543,6 +543,120 @@ describe('B07: evaluate_expr（表达式求值 op）', () => {
       expect(state.internalStore.get('$r_r')).toBe(true)
     })
   })
+
+  // ========== 错误处理（输入校验）：驱动每个操作符的防御性守卫，验证业务错误数据化 ==========
+  describe('错误处理（输入校验'), () => {
+    test('and/or/not 空参数 → INVALID_INPUT', async () => {
+
+    test('and/or/not 空参数 → INVALID_INPUT', async () => {
+      for (const op of ['and','or','not']) {
+        expect(((await execOp(op as OpName, [])).error as any).code).toBe('INVALID_INPUT')
+      }
+    })
+
+    test('neg 类型不匹配 → INVALID_INPUT', async () => {
+      const r = await evalExpr({ type: 'op', name: 'neg', args: [{ type: 'literal', value: 'x' }] })
+      expect((r.error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('+ 至少1参数', async () => {
+      const r = await evalExpr({ type: 'op', name: '+', args: [] })
+      expect((r.error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('- * / % 需2参数', async () => {
+      const one = { type: 'op', name: '-', args: [{ type: 'literal', value: 1 }] }
+      expect(((await evalExpr(one)).error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('% / 除零 → DIVIDE_BY_ZERO', async () => {
+      for (const op of ['%','/']) {
+        const r = await evalExpr({ type: 'op', name: op, args: [
+          { type: 'literal', value: 5 },
+          { type: 'literal', value: 0 }
+        ]})
+        expect((r.error as any).code).toBe('DIVIDE_BY_ZERO')
+      }
+    })
+
+    test('> < >= <= 类型混合 → INVALID_INPUT', async () => {
+      for (const op of ['>','<','>=','<=']) {
+        const r = await evalExpr({ type: 'op', name: op, args: [
+          { type: 'literal', value: 5 },
+          { type: 'literal', value: 'x' }
+        ]})
+        expect((r.error as any).code).toBe('INVALID_INPUT')
+      }
+    })
+
+    test('& | ^ << >> >>> 参数数量守卫', async () => {
+      for (const op of ['&','|','^','<<','>>','>>>']) {
+        const one = { type: 'op', name: op, args: [{ type: 'literal', value: 1 }] }
+        expect(((await evalExpr(one)).error as any).code).toBe('INVALID_INPUT')
+      }
+    })
+
+    test('~ 取反类型不匹配 → INVALID_INPUT', async () => {
+      const r = await evalExpr({ type: 'op', name: '~', args: [{ type: 'literal', value: 'a' }] })
+      expect((r.error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('slice / regex_match / to_number 单参数守卫', async () => {
+      const sliceR = await evalExpr({ type: 'op', name: 'slice', args: [{ type: 'literal', value: 'abc' }] })
+      expect((sliceR.error as any).code).toBe('INVALID_INPUT')
+      const reMatchR = await evalExpr({ type: 'op', name: 'regex_match', args: [{ type: 'literal', value: 'a' }] })
+      expect((reMatchR.error as any).code).toBe('INVALID_INPUT')
+      const toNumR = await evalExpr({ type: 'op', name: 'to_number', args: [] })
+      expect((toNumR.error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('head/tail 非列表 → INVALID_INPUT', async () => {
+      for (const op of ['head','tail']) {
+        const r = await evalExpr({ type: 'op', name: op, args: [{ type: 'literal', value: 123 }] })
+        expect((r.error as any).code).toBe('INVALID_INPUT')
+      }
+    })
+
+    test('map/filter/reduce MVP 不支持（UNSUPPORTED）', async () => {
+      // filter(含空参)触发守卫并抛 UNSUPPORTED；reduce 同理
+      const filterEmpty = { type: 'op', name: 'filter', args: [
+        { type: 'literal', value: [1] },
+        { type: 'literal', value: undefined }
+      ]}
+      expect(((await evalExpr(filterEmpty)).error as any).code).toBe('UNSUPPORTED')
+      const reduceEmpty = { type: 'op', name: 'reduce', args: [
+        { type: 'literal', value: [] },
+        { type: 'literal', value: undefined },
+        { type: 'literal', value: undefined }
+      ]}
+      expect(((await evalExpr(reduceEmpty)).error as any).code).toBe('UNSUPPORTED')
+    })
+
+    test('contains/has/get/keys/values 参数不匹配守卫', async () => {
+      const containsR = await evalExpr({ type: 'op', name: 'contains', args: [{ type: 'literal', value: [1] }] })
+      expect((containsR.error as any).code).toBe('INVALID_INPUT')
+      for (const op of ['keys','values']) {
+        const r = await evalExpr({ type: 'op', name: op, args: [{ type: 'literal', value: 'x' }] })
+        expect((r.error as any).code).toBe('INVALID_INPUT')
+      }
+    })
+
+    test('is_error 单参数守卫（空参）→ INVALID_INPUT', async () => {
+      const isErrorEmpty = { type: 'op', name: 'is_error', args: [] }
+      expect(((await evalExpr(isErrorEmpty)).error as any).code).toBe('INVALID_INPUT')
+    })
+
+    test('+ 混合列表/非列表 → INVALID_INPUT（防御分支覆盖）', async () => {
+      const r = await evalExpr({
+        type: 'op', name: '+',
+        args: [
+          { type: 'literal', value: [1,2] },
+          { type: 'literal', value: 'notlist' }
+        ]
+      })
+      expect((r.error as any).code).toBe('INVALID_INPUT')
+    })
+  }))
 })
 
 // ============== 辅助函数 ==============

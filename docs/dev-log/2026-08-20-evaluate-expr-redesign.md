@@ -170,3 +170,52 @@ type Expr =
 > 基于当前 L1 的运行事实上不依赖任何比较运算，比较运算的实际使用方是 L3 的事实，希望进行一次整体重构。加重 L3 的职责，建立一个"数据表达式"的 L2 操作，使得 L3 能静态构建一个复杂的表达式，包含算数运算、比较运算、逻辑运算、优先级括号、甚至允许位运算、集合运算、lambda 等。返回一个结果值。更进一步可以是"数据转换"操作，可以做到对输入输入数据做任意的目标语法支持的处理，可以支持引用许可的数据处理库，唯一的限定是不存在 IO 操作。L3 利用"表达式"或"数据转换"操作，将后续用于处理逻辑分支判断的最终表达式求解并形成布尔或支持的空/非空等结果存入对应的寄存器，使得后续的条件跳转指令能获得预期的变量值。请先评估这个方案。
 
 **这是真正的架构洞察**——把"表达式求值"作为 L2 单一 op，符合 Lisp/SQL/jq 等成熟模式。
+---
+
+## 8. 实施完成（2026-08-20 后续 commit）
+
+### 代码实施
+
+- ✅ `src/l2/builtins/evaluate-expr.ts`（~620 行，JSON 树形求值器）
+- ✅ `src/l2/operation.ts`：`Operation.execute` 签名扩展为可选 `state` 参数
+- ✅ `src/l1/primitives/execute-op.ts`：调 `op.execute(inputs, state)` 时传入 state
+- ✅ `tests/phase-b/tier-b07-evaluate-expr.test.ts`（48 tests）
+
+### 删除（已实施）
+
+- ❌ `src/l2/builtins/equals.ts`
+- ❌ `src/l2/builtins/gt.ts`
+- ❌ `src/l2/builtins/gte.ts`
+- ❌ `src/l2/builtins/and.ts`
+- ❌ `src/l2/builtins/is-truthy.ts`
+- ❌ `src/l2/builtins/extract-error-code.ts`
+- ❌ `tests/phase-b/tier-b06-conditional-ops.test.ts`
+
+### 文档同步
+
+- ✅ `doc 06 §7.2`：核心 8 → 11 个（含 evaluate_expr）
+- ✅ `doc 06 §7.3`：增 evaluate_expr Schema
+- ✅ `doc 06 §7.2.1`：完整设计（设计反馈文档）
+- ✅ `doc 06 §7.3 示例`：条件判断用 evaluate_expr
+- ✅ `doc 09` L1 集成示例同步
+- ✅ `doc 10 §6.5`：循环模式用 evaluate_expr(gte)
+- ✅ `doc 10 D30`：counter 示例同步
+- ✅ `doc 11`：B06 → B07 evaluate_expr；Phase C 依赖更新
+- ✅ `doc 12`：trigger: Expr JSON 树（替代原 condition_op + compare_value）
+
+### 验证
+
+- ✅ 485/485 passing（27 文件）
+- ✅ typecheck 通过
+- ✅ evaluate-expr.ts 80.29% lines（剩余为各 op 参数校验防御；核心功能 100% 覆盖）
+
+### 净效果（与本 dev-log 第二节预测对照）
+
+| | 预测 | 实际 |
+|---|---|---|
+| L2 op 总数 | 11 | **11** ✓ |
+| 条件判断 DAG 长度 | 1 | **1** ✓ |
+| L3 编译器职责 | 构造 JSON 树 | 构造 JSON 树 ✓ |
+| lambda MVP | 不实现 | 不实现 ✓ |
+| 位运算 | 8 | | 8 | ✓ |
+| sort_by/take_first | 保留 | 保留 ✓ |

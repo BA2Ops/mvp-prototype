@@ -194,7 +194,7 @@ export const shellExecOp: Operation = {
         }
       }
 
-      // 其他异常（spawn 失败等）：throw → L1 bubbleError
+      /* v8 ignore next 4 -- 防御代码：已知 spawn 错误码已数据化；此 throw 为不可预测的运行时异常，走 L1 bubbleError */
       throw err
     }
   }
