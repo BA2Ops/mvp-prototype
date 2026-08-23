@@ -16,10 +16,13 @@
 
 import type { Experience } from './experience.js'
 import type { Value } from '../l1/types.js'
-import { ERROR_REGISTER, isOperationError } from '../l2/errors.js'
+import { GLOBAL_ERR, isOperationError } from '../l2/errors.js'
+import { GLOBAL_PATH } from './crr-config.js'
+import { LEGACY_ERROR_REGISTER, LEGACY_PATH_REGISTER } from './crr-config.js'
 
-/** 编译器写入的路径标记寄存器（与 compiler.ts PATH_MARK_REG 一致）*/
-const PATH_MARK_REG = '$r_path'
+/** CRR P1 重命名后的错误寄存器/路径寄存器(主推) */
+// (GLOBAL_ERR = '$err', GLOBAL_PATH = '$path')
+/** Legacy 别名(P4 末删除;本文件同时读双名以兼容过渡期) */
 
 /**
  * 模板插值：{name} 替换。
@@ -39,10 +42,15 @@ function interpolate(template: string, vars: Record<string, Value>): string {
 function buildVars(registers: Record<string, Value>, err: Value): Record<string, Value> {
   const vars: Record<string, Value> = {}
   for (const [k, v] of Object.entries(registers)) {
-    if (!k.startsWith('$r_')) continue
-    if (k === ERROR_REGISTER || k === PATH_MARK_REG) continue
+    // 跳过两种 prefix:
+    // 1. legacy $r_* (含 $r_input_ / $r_argtmp_ / $r_cond_ / $r_judge_)
+    // 2. CRR $S*.* (scope-prefixed,应由 caller 调用前过滤)
+    if (!k.startsWith('$r_') && !k.startsWith('$S')) continue
+    if (k === GLOBAL_ERR || k === GLOBAL_PATH || k === LEGACY_ERROR_REGISTER || k === LEGACY_PATH_REGISTER) continue
     // $r_input_x → x；$r_xxx → xxx；$r_argtmp_*/$r_cond_*/$r_judge_* 由调用方过滤
-    const name = k.startsWith('$r_input_') ? k.slice('$r_input_'.length) : k.slice('$r_'.length)
+    const name = k.startsWith('$r_input_')
+      ? k.slice('$r_input_'.length)
+      : k.startsWith('$S') ? k : k.slice('$r_'.length)
     if (name.length > 0 && !(name in vars)) vars[name] = v
   }
   if (isOperationError(err)) {
@@ -58,12 +66,14 @@ function buildVars(registers: Record<string, Value>, err: Value): Record<string,
  * @param exp 执行的经验定义
  * @param registers 业务寄存器（应已过滤编译器临时寄存器）
  * @returns 插值后的中文消息
+ *
+ * CRR P1: 读 $err (主) / $r_err (legacy fallback);读 $path (主) / $r_path (legacy)
  */
 export function resolveResponse(
   exp: Experience,
   registers: Record<string, Value>
 ): string {
-  const err = registers[ERROR_REGISTER] ?? null
+  const err = registers[GLOBAL_ERR] ?? registers[LEGACY_ERROR_REGISTER] ?? null
 
   // ---- 优先级 1: 失败显性化 ----
   if (err !== null && err !== undefined) {
@@ -80,7 +90,7 @@ export function resolveResponse(
   }
 
   // ---- 优先级 2: 实际路径的 response ----
-  const pathId = registers[PATH_MARK_REG]
+  const pathId = registers[GLOBAL_PATH] ?? registers[LEGACY_PATH_REGISTER]
   if (typeof pathId === 'string') {
     const path = exp.target_op.paths.find(p => p.id === pathId)
     if (path?.response) {

@@ -260,4 +260,21 @@ export interface CompileOptions {
    * 当前 MVP：单个值。未来可扩展为多维（执行/时间/资源成本）。
    */
   skip_cost?: number
+
+  /**
+   * CRR (Compiler Register-file Redesign, doc 19/19b/19c) feature flag
+   *
+   * - false (默认, P1 前 + legacy 对照期) : 走原路径
+   *   `$r_input_<key>` / `$r_argtmp_<N>` 自增 / register kind 直接 throw
+   *   / `$r_err` / `$r_path` 旧名 → 与 CRR 前行为完全等价
+   *
+   * - true (P1 末 legacy 对照通过后翻 true) : 走新路径
+   *   `$S<scope>.in<slotIndex>` / `$S<scope>.out<slotIndex>` fixed-slot
+   *   / FrameScopeAllocator / literal pool round-robin size=8
+   *   / judge/cond pool size ≤10 / `$err` / `$path` 重命名
+   *
+   * 详细：见 docs/mvp/19c-implementation-plan.md §一.1。
+   * P4 末 feature flag 移除,默认 hardcode 为 true。
+   */
+  useFixedSlotConvention?: boolean
 }

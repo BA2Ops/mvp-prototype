@@ -22,6 +22,7 @@ import type { ExecutionState } from '../l1/execution-state.js'
 import type { RecognizedIntent, Value } from '../l1/types.js'
 import type { OperationError } from '../l2/errors.js'
 import { ERROR_REGISTER } from '../l2/errors.js'
+import { GLOBAL_ERR, LEGACY_ERROR_REGISTER } from '../l3/crr-config.js'
 import type { L2RegistryLike } from '../l3/compiler.js'
 import { ExperienceService } from '../l3/experience-service.js'
 import { resolveResponse } from '../l3/response.js'
@@ -188,7 +189,7 @@ export class AgentPipeline {
       intent,
       primary: primaryReg ? (registers[primaryReg] ?? null) : null,
       registers,
-      error: (registers[ERROR_REGISTER] as OperationError | null) ?? null,
+      error: ((registers[GLOBAL_ERR] ?? registers[LEGACY_ERROR_REGISTER ?? ERROR_REGISTER] ?? null) as unknown) as OperationError | null,
       elapsedMs,
       utterance
     }

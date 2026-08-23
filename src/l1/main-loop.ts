@@ -30,6 +30,7 @@ import type { ExecutionState } from './execution-state.js'
 import { assertNever, isIntentEntry } from './types.js'
 import { generateId, now } from './id.js'
 import { ERROR_REGISTER, errorToOperationError } from '../l2/errors.js'
+import { GLOBAL_ERR } from '../l3/crr-config.js'
 import { DEFAULT_MAX_RECURSION_DEPTH, enterIntent, exitIntent, RecursionDepthError } from './recursion.js'
 import { executeMove } from './primitives/move.js'
 import { executeOp } from './primitives/execute-op.js'
@@ -191,14 +192,15 @@ export async function bubbleError(
   err: unknown,
   state: ExecutionState
 ): Promise<boolean> {
-  // ============ Step 1: 异常信息写入 $r_err ============
-  // 后续指令（catch 逻辑）通过 $r_err 内容判断处理路径
+  // ============ Step 1: 异常信息写入 $r_err (legacy) + $err (CRR) ============
+  // CRR P1 (T-1.4): 双写以兼容过渡期 — legacy 路径继续读 $r_err,
+  //                  新路径读 $err。P4 末统一以 $err 为准。
+  // 后续指令（catch 逻辑）通过任一名字判断处理路径
   // 注：OperationError 是合法业务数据（满足 Value 语义），但 TS interface
   //     无 index signature，赋给 Value 需要断言
-  state.internalStore.set(
-    ERROR_REGISTER,
-    errorToOperationError(err) as unknown as Value
-  )
+  const opErr = errorToOperationError(err) as unknown as Value
+  state.internalStore.set(ERROR_REGISTER, opErr)
+  state.internalStore.set(GLOBAL_ERR, opErr)
 
   // ============ Step 2: 弹出异常点 entry ============
   // 主循环 catch 时栈顶即抛错者（primitive 抛错时未 pop）

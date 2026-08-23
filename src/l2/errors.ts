@@ -97,12 +97,23 @@ export const ErrorCodes = {
 export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes] | string
 
 /**
- * 特殊保留寄存器名：全局错误寄存器
+ * 特殊保留寄存器名：全局错误寄存器 (legacy 别名)
  *
- * 所有 op 的 error 输出都写到 $r_err（如果该 op 有 error 输出）。
+ * 所有 op 的 error 输出都写到 $r_err / $err（如果该 op 有 error 输出）。
  * $r_err 是全局共享的，最后一个 op 写入的 error 会覆盖之前的。
+ *
+ * @deprecated CRR P1 起使用 `GLOBAL_ERR` (= '$err')；本别名 P4 末删除。
+ *   保留为过渡期 (legacy 仍读 $r_err, 双写 $r_err + $err 一迭代)
  */
 export const ERROR_REGISTER = '$r_err'
+
+/**
+ * CRR 重命名后的全局错误寄存器
+ *
+ * @see docs/mvp/19-register-file-core.md C4
+ * @see docs/mvp/19c-implementation-plan.md §三 T-1.4
+ */
+export const GLOBAL_ERR = '$err'
 
 /**
  * 把任意异常转换为标准 OperationError
