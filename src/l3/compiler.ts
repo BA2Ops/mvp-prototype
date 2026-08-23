@@ -55,7 +55,11 @@ import type { ExecutionState } from '../l1/execution-state.js'
 import type { Experience, ParamRef, CompileOptions, PreProcessing, ConditionalJudgment, OpStep } from './experience.js'
 import type { Expr } from '../l2/builtins/evaluate-expr.js'
 import { generateId, now } from '../l1/id.js'
-import { ERROR_REGISTER } from '../l2/errors.js'
+import { ERROR_REGISTER, GLOBAL_ERR } from '../l2/errors.js'
+import {
+  GLOBAL_PATH,
+  LEGACY_PATH_REGISTER
+} from './crr-config.js'
 
 // ============== Registry 接口（避免循环依赖）==============
 
@@ -65,16 +69,23 @@ export interface L2RegistryLike {
 
 // ============== 寄存器命名约定 ===============
 
-/** intent.params 绑定寄存器前缀 */
+/** intent.params 绑定寄存器前缀 (legacy + CRR 通用,Step 0 输入绑定语义不变) */
 const INPUT_PREFIX = '$r_input_'
-/** literal ParamRef 临时寄存器前缀 */
+/** literal ParamRef 临时寄存器前缀 (legacy path 使用,自增计数器) */
 const ARG_TMP_PREFIX = '$r_argtmp_'
-/** 条件 AST 寄存器 */
+/** 条件 AST 寄存器 (legacy path 使用,按 judgment.id 命名) */
 const condReg = (jid: string) => `$r_cond_${jid}`
-/** 条件求值结果寄存器 */
+/** 条件求值结果寄存器 (legacy path 使用,按 judgment.id 命名) */
 const judgeReg = (jid: string) => `$r_judge_${jid}`
-/** 实际走过的路径 ID 标记（D-E2-1，resolveResponse 用）*/
-const PATH_MARK_REG = '$r_path'
+/** 实际走过的路径 ID 标记 (legacy path 使用,resolveResponse 双名读取) */
+const PATH_MARK_REG = LEGACY_PATH_REGISTER // '$r_path' (global functional 写过 $path,legacy 过渡仍产 $r_path)
+/**
+ * CRR 新路径专用:
+ * - 使用 FrameScopeAllocator 分配 scope-prefixed 名 ($S<scopeId>.out<k>, $S<scopeId>.argtmp<N>, ...)
+ * - PATH_MARK → $path (GLOBAL_PATH)
+ * - error alias → $err (GLOBAL_ERR)
+ * - 源/保留名字在 compiled entries 上一一对应,不遗漏不重复
+ */
 
 // ============== 公共入口 ===============
 
@@ -90,7 +101,7 @@ const PATH_MARK_REG = '$r_path'
  */
 export function compileExperience(
   intent: RecognizedIntent,
-  _state: ExecutionState,
+  state: ExecutionState,
   experiences: Map<string, Experience>,
   registry: L2RegistryLike,
   options?: CompileOptions
@@ -99,17 +110,24 @@ export function compileExperience(
   if (!exp) {
     throw new Error(`L3 compile: no experience registered for type '${intent.type}'`)
   }
+  const newPath = options?.useFixedSlotConvention === true && !!state.frameScopeAllocator
+  // CRR T-1.3: 使用当前活跃 scope(由 main-loop T-1.5 在 executeIntent 之前 enter)
+  // 本函数不重复 enterScope,避免与帧生命周期不一致 (R-1🔴高)
+  const activeScopeId = newPath ? state.frameScopeAllocator!.currentScope() : null
   const ctx: CompileCtx = {
     intent,
     experiences,
     registry,
     skipCost: options?.skip_cost ?? 0,
-    tmpCounter: 0
+    tmpCounter: 0,
+    newPath,
+    allocator: newPath ? state.frameScopeAllocator! : null,
+    scopeId: activeScopeId
   }
 
   const entries: StackEntry[] = []
 
-  // Step 0: 输入绑定
+  // Step 0: 输入绑定 (legacy + new 路径语义相同 —— $r_input_<key>)
   entries.push(...bindInputs(exp, ctx))
 
   // Step 1: 前置处理（按 skip_cost 过滤）
@@ -133,7 +151,14 @@ interface CompileCtx {
   experiences: Map<string, Experience>
   registry: L2RegistryLike
   skipCost: number
+  /** legacy path 用：argtmp counter */
   tmpCounter: number
+  /** CRR new path 开关 */
+  newPath: boolean
+  /** CRR new path 用：非 null 时表选 new path */
+  allocator: import('../l1/execution-state.js').FrameScopeAllocator | null
+  /** CRR new path 用：enterScope 拿到的 scopeId,供 allocate* 调用 */
+  scopeId: string | null
 }
 
 // ============== Step 0: 输入绑定 ===============
@@ -194,12 +219,15 @@ function compilePathSteps(exp: Experience, pathId: string, ctx: CompileCtx): Sta
 
 /**
  * 构造运行时 if/else 分支（见文件头 D-C4-3 规范构造与轨迹验证）。
+ *
+ * CRR new path (T-1.3): cond/judge 使用 allocator 分配 ($S<scopeId>.cond<j> / .judge<j>);
+ *                       path-mark 使用 $path (GLOBAL_PATH);error alias 使用 $err (GLOBAL_ERR)
  */
 function compileBranch(
   j: ConditionalJudgment,
   thenEntries: StackEntry[],
   elseEntries: StackEntry[],
-  _ctx: CompileCtx
+  ctx: CompileCtx
 ): StackEntry[] {
   // 源头取反：not(condition_expr)
   const negated: Expr = {
@@ -208,22 +236,31 @@ function compileBranch(
     args: [j.trigger.condition_expr]
   }
 
+  // 分支的 cond/judge/path-mark 名 —— legacy 使用 j.id 命名,new path 走 allocator pool
+  const condName = ctx.newPath
+    ? ctx.allocator!.allocateCondScratch(ctx.scopeId!)
+    : condReg(j.id)
+  const judgeName = ctx.newPath
+    ? ctx.allocator!.allocateJudgeScratch(ctx.scopeId!)
+    : judgeReg(j.id)
+  const pathMarkName = ctx.newPath ? GLOBAL_PATH : PATH_MARK_REG
+
   // D-E2-1：路径标记——THEN/ELSE 块首各插入一条 move，记录实际走过的路径 ID，
   // 供 L3 resolveResponse 查找对应 path.response 消息模板。
   // 标记算在各块内部（先构造含标记的块，再算 cskip/skip 长度），长度自然正确。
   const thenMarked = [
-    makeMove({ kind: 'literal', value: j.then_path }, { kind: 'internal', name: PATH_MARK_REG }),
+    makeMove({ kind: 'literal', value: j.then_path }, { kind: 'internal', name: pathMarkName }),
     ...thenEntries
   ]
   const elseMarked = j.else_path
-    ? [makeMove({ kind: 'literal', value: j.else_path }, { kind: 'internal', name: PATH_MARK_REG }), ...elseEntries]
+    ? [makeMove({ kind: 'literal', value: j.else_path }, { kind: 'internal', name: pathMarkName }), ...elseEntries]
     : elseEntries // 链式递归（无显式 else_path）时由内层分支自行标记
 
   return [
     // [0] AST literal → 寄存器
     makeMove(
       { kind: 'literal', value: negated as unknown as Value },
-      { kind: 'internal', name: condReg(j.id) }
+      { kind: 'internal', name: condName }
     ),
     // [1] evaluate_expr 求值
     {
@@ -232,10 +269,10 @@ function compileBranch(
       createdAt: now(),
       kind: 'execute_op',
       operation: 'evaluate_expr',
-      inputs: { expr: { kind: 'internal', name: condReg(j.id) } },
+      inputs: { expr: { kind: 'internal', name: condName } },
       outputs: {
-        result: { kind: 'internal', name: judgeReg(j.id) },
-        error: { kind: 'internal', name: ERROR_REGISTER }
+        result: { kind: 'internal', name: judgeName },
+        error: { kind: 'internal', name: ctx.newPath ? GLOBAL_ERR : ERROR_REGISTER }
       },
       status: 'pending'
     },
@@ -245,7 +282,7 @@ function compileBranch(
       parentIntentId: null,
       createdAt: now(),
       kind: 'conditional_skip',
-      conditionAddr: { kind: 'internal', name: judgeReg(j.id) },
+      conditionAddr: { kind: 'internal', name: judgeName },
       n: thenMarked.length + 1
     },
     // [3..] THEN（含路径标记）
@@ -282,10 +319,12 @@ function compileSteps(steps: OpStep[], ctx: CompileCtx): StackEntry[] {
 /**
  * 把一组 ParamRef 展开为 Address map + literal sidecar moves。
  *
- * - literal → 先 move 到临时寄存器 $r_argtmp_*，再引用该寄存器
+ * - literal → 先 move 到临时寄存器 (legacy: $r_argtmp_N counter; new path: $S<scope>.argtmp<k> round-robin pool size=8)
  *   （L1 约束：execute_op.inputs 只能是 internal）
- * - input → $r_input_<name>（Step 0 已绑定）
- * - register → 原名直接引用
+ * - input → $r_input_<name>（Step 0 已绑定,legacy + new 共用）
+ * - register → 原名直接引用 (P3 将改为结构化 {exp?, outKey} defer 绑定)
+ *
+ * CRR T-1.3: literal sidecar 改走 FrameScopeAllocator.allocateArgtmpSlot —— round-robin 替换自增计数器
  */
 function expandRefs(
   refs: Record<string, ParamRef>,
@@ -299,7 +338,9 @@ function expandRefs(
       if (direction === 'out') {
         throw new Error(`L3 compile: output param '${name}' cannot be a literal`)
       }
-      const regName = `${ARG_TMP_PREFIX}${ctx.tmpCounter++}`
+      const regName = ctx.newPath
+        ? ctx.allocator!.allocateArgtmpSlot(ctx.scopeId!)
+        : `${ARG_TMP_PREFIX}${ctx.tmpCounter++}`
       moves.push(makeMove({ kind: 'literal', value: ref.value }, { kind: 'internal', name: regName }))
       addrs[name] = { kind: 'internal', name: regName }
     } else if (ref.kind === 'input') {
@@ -313,6 +354,12 @@ function expandRefs(
 
 /**
  * 编译单个 L2 op 调用：sidecar moves + OpEntry。
+ *
+ * CRR T-1.3: outputs 中使用 register ref 时,legacy 接受任意名称 (受 Phase C MVP 限制
+ *   仅能引用同 frame output 变量);new path 透传 literal name —— 但现状 compile 路径
+ *   不会特判 'kind: register' 的语义,执行时由 L1 address-resolver 按 name 在
+ *   internalStore 查找。scopeId-隔离通过 K4 论证(同 frame output 在同一 scope 下,
+ *   跨 frame 由不同 scope prefix 保证隔离)。
  */
 export function compileOp(
   opName: string,
@@ -344,6 +391,11 @@ export function compileOp(
  *
  * MVP 限制：params 仅支持 literal / input 引用（register 引用需运行时求值，
  * 而 intent.params 是静态值——Phase C 后续版本可扩展）。
+ *
+ * CRR T-1.3: 不在此处 enterScope —— compileExperience 顶层已经 enter 了一层,
+ *   nested intent 的 scope 需在 executeIntent 执行时 (main-loop T-1.5 hook)
+ *   再 enter。scopeId 由 main-loop 分配并写回 IntentEntry.scopeId,
+ *   避免与 compileExperience 的 ctx.scopeId 冲突。
  */
 function makeNestedIntent(step: OpStep, ctx: CompileCtx): StackEntry & { kind: 'execute_intent' } {
   const nestedExp = ctx.experiences.get(step.operation)!
@@ -368,7 +420,11 @@ function makeNestedIntent(step: OpStep, ctx: CompileCtx): StackEntry & { kind: '
     intent: { type: step.operation, params },
     phase: 'pending',
     children: [],
-    handleError: nestedExp.handleError ?? false
+    handleError: nestedExp.handleError ?? false,
+    // CRR T-1.3: 嵌套 intent 的 scopeId 由 main-loop (T-1.5) 在 processIntentEntry
+    // 阶段 fresh enterScope 后写入。compileExperience 阶段的 ctx.scopeId 是父 scope,
+    // 不可用于嵌套 intent —— 嵌套是子 frame,理应有自己的 scope。
+    scopeId: undefined
   }
 }
 

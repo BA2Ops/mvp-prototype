@@ -120,6 +120,17 @@ export interface IntentEntry extends BaseEntry {
    * 而非 L2 op 自己决定。
    */
   handleError: boolean
+  /**
+   * CRR Frame Scope ID (T-1.5)
+   *
+   * 当 CompileOptions.useFixedSlotConvention=true 时由 compiler 分配,
+   * main-loop 在 enterIntent 时 enterScope / exitIntent 时 exitScope,
+   * bubbleError abortFrame 也必须对称 exitScope (R-1🔴高)。
+   *
+   * legacy path (useFixedSlotConvention=false) 保持 undefined,
+   * main-loop 不调用 FrameScopeAllocator。
+   */
+  scopeId?: string
 }
 
 /**

@@ -38,6 +38,39 @@ import { executeIntent } from './primitives/execute-intent.js'
 import { executeSkipN } from './primitives/skip-n.js'
 import { executeConditionalSkip } from './primitives/conditional-skip.js'
 
+// ============== CRR T-1.5 模块级开关 ==============
+/**
+ * CRR new path 总开关。
+ *
+ * 默认 false (legacy 路径运行,与原样逻辑兼容)。
+ * 测试代码可通过 enableCrrNewPath() / disableCrrNewPath() 在测试内打开/关闭。
+ *
+ * 启用后:
+ * - main-loop.processIntentEntry 在 pending 阶段为 IntentEntry 分配 FrameScopeAllocator scopeId
+ * - await children 完成后 exitScope
+ * - bubbleError abortFrame 路径同步 exitScope (R-1🔴高对称点)
+ *
+ * 设计依据: 19c-implementation-plan.md §三 T-1.5
+ * 未来 P2+ 接入 service options / frame-level metadata 替代全局开关。
+ */
+let _crrNewPathEnabled = false
+
+export function isCrrNewPathEnabled(): boolean {
+  return _crrNewPathEnabled
+}
+
+export function enableCrrNewPath(): void {
+  _crrNewPathEnabled = true
+}
+
+export function disableCrrNewPath(): void {
+  _crrNewPathEnabled = false
+}
+
+function crrNewPathEnabled(): boolean {
+  return _crrNewPathEnabled
+}
+
 /**
  * L1 主循环错误（防御：步数超限）
  */
@@ -130,6 +163,17 @@ async function processIntentEntry(
     // A11：激活帧前先登记递归深度（超限抛 RecursionDepthError，此时 phase 仍 pending，
     // 冒泡时不会误判为已 enter 的帧——见 abortFrame）
     enterIntent(top.intent.type, state, maxRecursionDepth)
+    // CRR T-1.5: 进入新 scope —— FrameScopeAllocator 与递归深度并列检查 (R-1🔴高对称点)
+    // 判定:仅当 frame 在 compileExperience 时需要 scope-prefixed slot (即 useFixedSlotConvention=true)
+    //   时,frame 的 scopeId 才被赋值。legacy path (默认 false) 永远不进 scope。
+    // 判定渠道:frame.scopeId === undefined 时尝试 lazy 分配;
+    //   判定标准 = frame 需不需 scope —— 默认需要 (service 层传递 options 时, frame 已标记)
+    //   留一个开关供未来精细控制 (P2+):handleError/state.options 等。
+    // MVP/P1 简化: 从 state.frameScopeAllocator 是否存在 + 一个 global flag 判定
+    //   全启/全不启。flag 通过全局模块变量控制 (T-1.5 临时),P2+ 接 service options。
+    if (top.scopeId === undefined && crrNewPathEnabled() && state.frameScopeAllocator) {
+      top.scopeId = state.frameScopeAllocator.enterScope()
+    }
     await executeIntent(top, state)
     return
   }
@@ -139,6 +183,10 @@ async function processIntentEntry(
     // 注：异常冒泡会直接把帧 pop 并标记 aborted（且 exitIntent），因此到达这里的
     // awaiting_children 帧必然正常完成了 children
     exitIntent(top.intent.type, state)
+    // CRR T-1.5: 退出 scope (R-1🔴高对称点) —— 仅当 scopeId 被分配过
+    if (top.scopeId !== undefined && state.frameScopeAllocator) {
+      state.frameScopeAllocator.exitScope()
+    }
     top.phase = 'done'
     state.stack.pop()
     return
@@ -161,6 +209,10 @@ function abortFrame(entry: StackEntry, state: ExecutionState): void {
   if (isIntentEntry(entry)) {
     if (entry.phase === 'awaiting_children') {
       exitIntent(entry.intent.type, state)
+      // CRR T-1.5: 对称退出 scope (R-1🔴高 — bubbleError 路径必须同 phase 'awaiting_children' 一样 exitScope)
+      if (entry.scopeId !== undefined && state.frameScopeAllocator) {
+        state.frameScopeAllocator.exitScope()
+      }
     } else {
       /* v8 ignore next 2 -- 防御代码：aborted 帧只被释放一次；pending 帧未 enter 无需 exit */
       // pending：未 enter；aborted：已释放——均无需 exitIntent
