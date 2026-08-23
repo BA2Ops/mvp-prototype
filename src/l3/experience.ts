@@ -31,11 +31,17 @@ export type { Expr } from '../l2/builtins/evaluate-expr.js'
  *   ——包括前置处理的输出。D-C1-1: 删除原 `kind:'preprocessing'`，因为
  *   前置输出的本质就是「写入了某个 named register」，用 register 引用即可。
  *   好处：简化编译逻辑；让经验定义中可自由引用任意中间结果（不必显式声明依赖链）。
+ * - registerOutput (P3/T-3.1): 结构化引用某个具体经验的 output。
+ *   等价于 `register: name=<expId>.<outKey> 解析到的具体 $S_parent.out<k> 寄存器`。
+ *   expId 可选:不提供时 从当前 frame 的最近一个写入 outKey 的经验中查找 (parent frame retention)。
+ *   使用 outputs_bindings 反查 register 名 (T-2.1 已就绪),所以 bindInputs 必须
+ *   生成 deferred binding move(parent 帧执行后 → child 输入寄存器)。
  */
 export type ParamRef =
   | { kind: 'literal'; value: Value }
   | { kind: 'input'; name: string }
   | { kind: 'register'; name: string }
+  | { kind: 'registerOutput'; expId?: string; outKey: string }
 
 // ============== Pre-Processing（前置处理）===================
 
@@ -298,6 +304,11 @@ export interface CompileOptions {
    * 当前 MVP：单个值。未来可扩展为多维（执行/时间/资源成本）。
    */
   skip_cost?: number
+
+  /**
+   * CRR P3/T-3.2: bindInputs 应跳过的 input key (已被父 binding move 填充到 $r_input_<k>)
+   */
+  prefilledInputKeys?: Set<string>
 
   /**
    * CRR (Compiler Register-file Redesign, doc 19/19b/19c) feature flag

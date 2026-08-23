@@ -131,6 +131,11 @@ export interface IntentEntry extends BaseEntry {
    * main-loop 不调用 FrameScopeAllocator。
    */
   scopeId?: string
+  /**
+   * CRR P3/T-3.2: registerOutput binding — 这些 input key 已被父 compile 生成的
+   * binding move 提前填充到 $r_input_<k>,bindInputs 不再生成 literal sidecar move.
+   */
+  prefilledInputKeys?: Set<string>
 }
 
 /**

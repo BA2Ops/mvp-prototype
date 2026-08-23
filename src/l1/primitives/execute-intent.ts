@@ -56,11 +56,19 @@ export class ExecuteIntentError extends Error {
  *
  * P2+ 接入: options 走 service 传递 / frame metadata (避免全局开关)
  */
-function getCompileOptionsForFrame(_entry: IntentEntry): CompileOptions | undefined {
+function getCompileOptionsForFrame(entry: IntentEntry): CompileOptions | undefined {
+  const opts: CompileOptions = {}
+  let set = false
   if (isCrrNewPathEnabled()) {
-    return { useFixedSlotConvention: true }
+    opts.useFixedSlotConvention = true
+    set = true
   }
-  return undefined
+  // CRR P3/T-3.2: registerOutput binding — bindInputs skip these keys
+  if (entry.prefilledInputKeys) {
+    opts.prefilledInputKeys = entry.prefilledInputKeys
+    set = true
+  }
+  return set ? opts : undefined
 }
 
 /**

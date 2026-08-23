@@ -128,6 +128,9 @@ export function compileExperience(
     scopeId: activeScopeId
   }
 
+  // CRR P3/T-3.2: registerOutput binding — bindInputs skip these keys
+ctx.prefilledInputKeys = options?.prefilledInputKeys
+
   const entries: StackEntry[] = []
 
   // CRR T-1.6: 聚合经验可见的 outputsByName (从每个 step 的 outputs[*].name 反查 op formalSpec)
@@ -360,6 +363,10 @@ interface CompileCtx {
   scopeId: string | null
   /** 调试: 当前正在编译的 op 名(供错误信息使用) */
   currentOpName?: string
+  /** CRR P3/T-3.2: bindInputs 跳过的 input key (已被父 binding move 填充 $r_input_<k>) */
+  prefilledInputKeys?: Set<string>
+  /** CRR P3/T-3.2: 嵌套 intent 哪些 param 已由父 binding move 填充, 嵌套 compile 不再生成 input literal move */
+  skipParamMoves?: Set<string>
 }
 
 // ============== Step 0: 输入绑定 ===============
@@ -367,6 +374,9 @@ interface CompileCtx {
 function bindInputs(exp: Experience, ctx: CompileCtx): StackEntry[] {
   const out: StackEntry[] = []
   for (const [key, spec] of Object.entries(exp.inputs ?? {})) {
+    // CRR P3/T-3.2: registerOutput binding — $r_input_<key> 已被父 binding move 填充,
+    //   本处跳过 literal sidecar (避免覆盖 / 缺值报错)
+    if (ctx.prefilledInputKeys?.has(key)) continue
     let value = ctx.intent.params[key] as Value | undefined
     if (value === undefined && spec.required === false && 'default' in spec) {
       value = spec.default
@@ -535,7 +545,11 @@ function compileSteps(steps: OpStep[], ctx: CompileCtx): StackEntry[] {
   const out: StackEntry[] = []
   for (const step of steps) {
     if (ctx.experiences.has(step.operation)) {
-      out.push(makeNestedIntent(step, ctx))
+      const { intent: nested, bindingMoves } = makeNestedIntent(step, ctx)
+      // CRR P3/T-3.2: bindingMoves 先于 nested IntentEntry 执行 (children[0] 先 pop)
+      // 与 LIFO 顺序一致: push 后 nested 在栈顶之前 (后续会被压栈)
+      out.push(...bindingMoves)
+      out.push(nested)
     } else if (!ctx.registry.has(step.operation)) {
       throw new Error(`L3 compile: unknown operation or experience '${step.operation}'`)
     } else {
@@ -576,6 +590,16 @@ function expandRefs(
       addrs[name] = { kind: 'internal', name: regName }
     } else if (ref.kind === 'input') {
       addrs[name] = { kind: 'internal', name: INPUT_PREFIX + ref.name }
+    } else if (ref.kind === 'registerOutput') {
+      // CRR P3/T-3.2: registerOutput 引用
+      // 父 scope (ctx.scopeId) 在 compileExperience 阶段已知, 可生成确定的 source register 名
+      // 父 compile 还会在 children 中插入 binding move ($Sparent.outK → $r_input_<k>),
+      // 	这里生成的 move 会被 binding move 覆盖, 因此 param.value 不再需要。
+      // 但 expandRefs 仍需为 child 的 $r_input_<k> 生成一个 placeholder write ——
+      // 	取 parent.sourceRegister 的字符串值作为 (overwriting) literal value,不会改变物理事实
+      // 	(both sides point to same register).
+      // 见下方:parent compile 在 makeNestedIntent 之前插入 binding move。
+      addrs[name] = { kind: 'internal', name: INPUT_PREFIX + ref.outKey }
     } else {
       // register kind
       if (ctx.newPath && spec) {
@@ -649,14 +673,82 @@ export function compileOp(
  *   再 enter。scopeId 由 main-loop 分配并写回 IntentEntry.scopeId,
  *   避免与 compileExperience 的 ctx.scopeId 冲突。
  */
-function makeNestedIntent(step: OpStep, ctx: CompileCtx): StackEntry & { kind: 'execute_intent' } {
+function makeNestedIntent(
+  step: OpStep,
+  ctx: CompileCtx
+): { intent: StackEntry & { kind: 'execute_intent' }; bindingMoves: StackEntry[] } {
   const nestedExp = ctx.experiences.get(step.operation)!
   const params: Record<string, unknown> = {}
+  // CRR P3/T-3.2: 收集 registerOutput 引用所需的 binding moves
+  // 这些 move 在 compileSteps 中插入到 children 中, 使其先于本 IntentEntry 执行 (LIFO 顺序)
+  const bindingMoves: StackEntry[] = []
   for (const [k, ref] of Object.entries(step.inputs)) {
     if (ref.kind === 'literal') {
       params[k] = ref.value
     } else if (ref.kind === 'input') {
       params[k] = ctx.intent.params[ref.name]
+    } else if (ref.kind === 'registerOutput') {
+      // CRR P3/T-3.2: 解析源经验 → formalSpec.outputs[outKey].slotIndex → 父 scope 下寄存器名
+      // 注意:仅 newPath 下能保证 $Sparent.outK 与 源经验 formalSpec.outputs[outKey].slotIndex 一致;
+      // 	 legacy path 下需要 fallback (ref.outKey 直接作为 register 名)
+      const srcExp = ref.expId ? ctx.experiences.get(ref.expId) : undefined
+      if (ctx.newPath && srcExp) {
+        // 源经验的 op 是什么?  对于 pre_processing/target_op.paths[*].steps 中的 step,
+        // source register 一定是某个 step 的 outputs[k]。我们检查 formalSpec:取 formalSpec.outputs[k].slotIndex
+        // 但这里 ctx 只暴露 experiences Map, 没有 step 名。简化:在 sourceExp.outputs 上面查 outKey 对应的 type,
+        // 找到该 outKey 是哪个 op formalSpec 的输出 → slotIndex
+        // 取 sourceExp.outputs (业务字段名) 反查:   sourceExp.target_op.paths[*].steps[].outputs[k] = {kind:'register',name:'$r_<X>'}
+        // 然后看那个 step.operation 的 formalSpec.outputs 对应 key。
+        const stepRef = findStepProducingOutput(srcExp, ref.outKey)
+        if (!stepRef) {
+          throw new Error(
+            `L3 compile: registerOutput {expId:'${ref.expId}',outKey:'${ref.outKey}'} — ` +
+            `source experience '${srcExp.id}' has no step that produces output '${ref.outKey}'`
+          )
+        }
+        const opSpec = ctx.registry.getSpec(stepRef.operation)
+        const fp = opSpec?.outputs?.[ref.outKey]
+        if (!fp) {
+          throw new Error(
+            `L3 compile: registerOutput {expId:'${ref.expId}',outKey:'${ref.outKey}'} — ` +
+            `op '${stepRef.operation}' has no formalSpec.outputs.${ref.outKey}`
+          )
+        }
+        if (fp.slotIndex === 99) {
+          // ERROR_SLOT_INDEX → 全局 $err, 无需 binding move
+          params[k] = undefined  // nested compile 时 $r_input_<k> 不会被读;取 $err (GLOBAL_ERR) 读
+        } else if (srcExp.outputs_bindings?.[ref.outKey]?.persist === true && ref.expId) {
+          // P3/T-3.2 主路径: source exp 声明了 persist:true binding → 通过 publicStore 间接引用
+          // post-bindings Step5 (T-2.2) 已在 source frame exit 前写入 publicStore[srcExp.id].<outKey>
+          const pubName = `${ref.expId}.${ref.outKey}`
+          params[k] = undefined
+          bindingMoves.push(makeMove(
+            { kind: 'public', name: pubName },
+            { kind: 'internal', name: INPUT_PREFIX + k }
+          ))
+        } else {
+          // Fallback: legacy / no-persist case — 直接用源经验的 internal 寄存器名 ($r_<outKey>)
+          console.warn(
+            `[CRR P3/T-3.2 warn] exp '${step.operation}' param ${k} references ` +
+            `'${ref.expId ?? '?'}'.outputs.${ref.outKey}, but source has no ` +
+            `'outputs_bindings[${JSON.stringify(ref.outKey)}].persist:true' — using legacy register; ` +
+            `add explicit declaration for reliable cross-scope reference.`
+          )
+          params[k] = undefined
+          bindingMoves.push(makeMove(
+            { kind: 'internal', name: `$r_${ref.outKey}` },
+            { kind: 'internal', name: INPUT_PREFIX + k }
+          ))
+        }
+      } else {
+        // legacy path: 直接用 $r_<outKey> 作为 source register 名 (与体验库现有约定一致)
+        const legacyReg = `$r_${ref.outKey}`
+        params[k] = undefined
+        bindingMoves.push(makeMove(
+          { kind: 'internal', name: legacyReg },
+          { kind: 'internal', name: INPUT_PREFIX + k }
+        ))
+      }
     } else {
       throw new Error(
         `L3 compile: nested experience '${step.operation}' param '${k}' uses register ref — ` +
@@ -664,7 +756,8 @@ function makeNestedIntent(step: OpStep, ctx: CompileCtx): StackEntry & { kind: '
       )
     }
   }
-  return {
+  // 将 bindingMoves 暂存在 IntentEntry 上 (实际插入由 compileSteps 包装)
+  const intent: StackEntry & { kind: 'execute_intent' } = {
     id: generateId('intent'),
     parentIntentId: null,
     createdAt: now(),
@@ -676,8 +769,37 @@ function makeNestedIntent(step: OpStep, ctx: CompileCtx): StackEntry & { kind: '
     // CRR T-1.3: 嵌套 intent 的 scopeId 由 main-loop (T-1.5) 在 processIntentEntry
     // 阶段 fresh enterScope 后写入。compileExperience 阶段的 ctx.scopeId 是父 scope,
     // 不可用于嵌套 intent —— 嵌套是子 frame,理应有自己的 scope。
-    scopeId: undefined
+    scopeId: undefined,
+    // CRR P3/T-3.2: registerOutput 引用已通过 binding move 填充到 $r_input_<k>
+    prefilledInputKeys:
+      Array.from(
+        Object.keys(step.inputs).filter(k => (step.inputs as any)[k].kind === 'registerOutput')
+      ) ? new Set(Object.keys(step.inputs).filter(k => (step.inputs as any)[k].kind === 'registerOutput')) : undefined
   }
+  return { intent, bindingMoves }
+}
+
+/**
+ * CRR P3/T-3.2 helper: 在 source experience 中查找产出 outKey 的 step (取首个)
+ *
+ * 检查顺序: pre_processing → target_op.paths[*].steps (合并去重)
+ * 仅用于 registerOutput 类型检查 (param values 独立走 binding move)。
+ */
+function findStepProducingOutput(
+  srcExp: Experience,
+  outKey: string
+): { operation: string } | null {
+  const check = (steps: OpStep[] | undefined): { operation: string } | null => {
+    if (!steps) return null
+    for (const s of steps) {
+      if (s.outputs && outKey in s.outputs) return { operation: s.operation }
+    }
+    return null
+  }
+  // pre_processing + 所有 target_op.paths[*].steps
+  // 为简化:只看 default_path
+  const def = srcExp.target_op.paths.find(p => p.id === srcExp.target_op.default_path)
+  return check(srcExp.pre_processing as unknown as OpStep[] | undefined) || check(def?.steps) || null
 }
 
 // ============== 工具 ===============
