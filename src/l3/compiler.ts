@@ -707,13 +707,16 @@ function makeNestedIntent(
           )
         }
         const opSpec = ctx.registry.getSpec(stepRef.operation)
-        const fp = opSpec?.outputs?.[ref.outKey]
+const fp = opSpec?.outputs?.[ref.outKey]
         if (!fp) {
-          throw new Error(
-            `L3 compile: registerOutput {expId:'${ref.expId}',outKey:'${ref.outKey}'} — ` +
-            `op '${stepRef.operation}' has no formalSpec.outputs.${ref.outKey}`
+          // T-3.3: 悬空 outKey → ParamRefError
+          throw new ParamRefError(
+            `registerOutput ${JSON.stringify({ expId: ref.expId ?? null, outKey: ref.outKey })} — ` +
+            `source experience '${srcExp.id}'.target_op default_path 中找不到产出 outKey='${ref.outKey}' 的 step`
           )
         }
+        // T-3.3: type mismatch 检测 (源输出 vs 目标经验 inputs[k].type)
+        checkRegisterOutputTypeCompat(nestedExp, k, srcExp, ref.outKey, fp.type)
         if (fp.slotIndex === 99) {
           // ERROR_SLOT_INDEX → 全局 $err, 无需 binding move
           params[k] = undefined  // nested compile 时 $r_input_<k> 不会被读;取 $err (GLOBAL_ERR) 读
@@ -812,6 +815,48 @@ function makeMove(from: Address, to: Address): StackEntry & { kind: 'move' } {
     kind: 'move',
     from,
     to
+  }
+}
+
+/**
+ * CRR P3/T-3.3 — registerOutput 引用在 compile-time 的类型 / 悬空检测错误。
+ *
+ * 子类化 Error; name='ParamRefError'; message 含 expId/outKey/type mismatch 上下文。
+ */
+export class ParamRefError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ParamRefError'
+  }
+}
+
+/**
+ * CRR P3/T-3.3 — registerOutput type-compat check (best-effort, lenient on missing schema).
+ *
+ * - source type 来自 op formalSpec.outputs[outKey].type
+ * - dest   type 来自 child experience inputs[paramKey].type (若声明)
+ * - 'any' / undefined → wildcard, 不报 mismatch
+ * - 两边都有具体值且不一致 → throw ParamRefError('incompatible type: ...')
+ */
+function checkRegisterOutputTypeCompat(
+  childExp: Experience,
+  paramKey: string,
+  srcExp: Experience,
+  outKey: string,
+  srcType: string | undefined
+): void {
+  const dstSchema = childExp.inputs?.[paramKey]
+  if (!dstSchema || !srcType) return // best-effort: 未声明或无源型 → skip
+  const dstType: string | undefined = dstSchema.type as unknown as string | undefined
+  if (
+    dstType &&
+    dstType !== 'any' &&
+    srcType !== 'any' &&
+    dstType !== srcType
+  ) {
+    throw new ParamRefError(
+      `registerOutput ${JSON.stringify({ expId: srcExp.id ?? null, outKey })} → child '${childExp.id}' input '${paramKey}': incompatible type (${srcType}) -> (${dstType})`
+    )
   }
 }
 

@@ -20,7 +20,7 @@ import { join } from 'path'
 import { l1MainLoop } from '../../src/l1/main-loop.js'
 import { createInitialState } from '../../src/l1/execution-state.js'
 import { enableCrrNewPath } from '../../src/l1/main-loop.js'
-import { compileExperience } from '../../src/l3/compiler.js'
+import { compileExperience, ParamRefError } from '../../src/l3/compiler.js'
 import { L2Registry } from '../../src/l2/registry.js'
 import { ExperienceService } from '../../src/l3/experience-service.js'
 import { fileReadOp } from '../../src/l2/builtins/file-read.js'
@@ -289,7 +289,79 @@ const state = createInitialState(r, new ExperienceService([aFixture, B, C], r))
     })
   })
 
-  describe('错误处理', () => {
+  describe('T-3.3 compile-time type mismatch + 悬空检测', () => {
+    const r = mkRegistry()
+    const A = mkExA(), B = mkExB()
+
+    function withStep(textKind: any): Experience {
+      return {
+        ...mkExC(),
+        target_op: {
+          ...mkExC().target_op,
+          paths: [{
+            id: 'normal',
+            steps: [
+              { operation: 'exp_a', inputs: {}, outputs: {} },
+              { operation: 'exp_b', inputs: { text: textKind }, outputs: {} }
+            ]
+          }]
+        }
+      }
+    }
+
+    it('source.type vs dest.inputs[k].type 不一致 → throw ParamRefError("incompatible type")', () => {
+      enableCrrNewPath()
+      // exp_b.inputs.text.type='string'; source file_read.content slotIndex 的 opSpec type 可能为 string —— 构造不匹配:
+      //   造一个 fake source op type 'number' via custom registry? MVP 用 monkey patch getSpec。
+      const reg2 = mkRegistry()
+      const origGetSpec = reg2.getSpec.bind(reg2)
+      ;(reg2 as any).getSpec = (name: string) => {
+        const spec = origGetSpec(name)
+        if (spec?.outputs?.content && name === 'file_read') {
+          return { ...spec, outputs: { ...spec.outputs, content: { ...(spec.outputs as any).content, type: 'number' as any } } }
+        }
+        return spec
+      }
+      const state = createInitialState(r, new ExperienceService([A, B], r))
+      state.frameScopeAllocator!.enterScope()
+      try {
+        compileExperience(
+          { type: 'exp_c', params: {} },
+          state,
+          mkExperiences(A, B, withStep({ kind: 'registerOutput', expId: 'exp_a', outKey: 'content' })),
+          reg2 as unknown as L2Registry,
+          { useFixedSlotConvention: true }
+        )
+        expect.fail('应 throw ParamRefError')
+      } catch (e) {
+        expect(e).toBeInstanceOf(Error)
+        // T-3.4 验收: message 含 incompatible type
+        expect((e as Error).message).toMatch(/incompatible type/)
+      }
+    })
+
+    it('ParamRefError is Error subclass + name=ParamRefError', async () => {
+      enableCrrNewPath()
+      const C = withStep({ kind: 'registerOutput', expId: 'exp_a', outKey: 'NOT_EXIST' })
+      const state = createInitialState(r, new ExperienceService([A, B, C], r))
+      state.frameScopeAllocator!.enterScope()
+      let caught: unknown
+      try {
+        compileExperience(
+          { type: 'exp_c', params: {} },
+          state,
+          mkExperiences(A, B, C),
+          r,
+          { useFixedSlotConvention: true }
+        )
+      } catch (e) { caught = e; void e }
+      expect(caught).toBeTruthy()
+      const err = new ParamRefError('sample'); expect(err.name).toBe('ParamRefError'); expect(err instanceof Error).toBe(true)
+    })
+  })
+
+
+  describe('错误处理 (T-3.2)', () => {
     it('registerOutput 引用悬空 outKey → throw ParamRefError (T-3.3 联动)', () => {
       enableCrrNewPath()
       const r = mkRegistry()
