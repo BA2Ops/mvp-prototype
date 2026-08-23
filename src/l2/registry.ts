@@ -7,7 +7,7 @@
  * L1 通过 get() 获取 operation 实例。
  */
 
-import type { Operation } from './operation.js'
+import type { Operation, OperationFormalSpec } from './operation.js'
 
 export class L2Registry {
   private ops = new Map<string, Operation>()
@@ -29,6 +29,14 @@ export class L2Registry {
    */
   get(name: string): Operation | undefined {
     return this.ops.get(name)
+  }
+
+  /**
+   * CRR T-1.2: 获取 operation 的 formalSpec (只读元数据)
+   * @returns OperationFormalSpec 或 undefined (未注册)
+   */
+  getSpec(name: string): OperationFormalSpec | undefined {
+    return this.ops.get(name)?.formalSpec
   }
 
   /**

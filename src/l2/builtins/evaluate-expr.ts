@@ -637,14 +637,14 @@ export const evaluateExprOp: Operation = {
     inputs: {
       expr: {
         businessName: 'expr',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'object',
         required: true,
         description: 'JSON 表达式树'
       },
       env: {
         businessName: 'env',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'object',
         required: false,
         description: '变量名 → internal 寄存器名映射（可选）'
@@ -653,14 +653,14 @@ export const evaluateExprOp: Operation = {
     outputs: {
       result: {
         businessName: 'result',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'any',
         required: true,
         description: '求值结果'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

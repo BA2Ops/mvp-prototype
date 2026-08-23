@@ -64,28 +64,28 @@ export const shellExecOp: Operation = {
     inputs: {
       command: {
         businessName: 'command',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'string',
         required: true,
         description: '可执行命令名或绝对路径'
       },
       args: {
         businessName: 'args',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'object',  // list<string>
         required: false,
         description: '参数数组（不经过 shell 解析）'
       },
       cwd: {
         businessName: 'cwd',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'path',
         required: false,
         description: '工作目录'
       },
       timeout_ms: {
         businessName: 'timeout_ms',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'number',
         required: false,
         description: '超时毫秒（默认 30000）'
@@ -94,28 +94,28 @@ export const shellExecOp: Operation = {
     outputs: {
       stdout: {
         businessName: 'stdout',
-        register: '$r4',
+        register: '$r4', slotIndex: 4,
         type: 'string',
         required: true,
         description: '标准输出'
       },
       stderr: {
         businessName: 'stderr',
-        register: '$r5',
+        register: '$r5', slotIndex: 5,
         type: 'string',
         required: true,
         description: '标准错误'
       },
       exit_code: {
         businessName: 'exit_code',
-        register: '$r6',
+        register: '$r6', slotIndex: 6,
         type: 'number',
         required: true,
         description: '退出码（0 = 成功）'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息（ENOENT/EACCES/TIMEOUT）'

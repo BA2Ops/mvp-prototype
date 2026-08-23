@@ -47,14 +47,14 @@ export const fileReadOp: Operation = {
     inputs: {
       path: {
         businessName: 'path',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'path',
         required: true,
         description: '要读取的文件路径'
       },
       encoding: {
         businessName: 'encoding',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'string',
         required: false,
         description: '字符编码（默认 utf-8）'
@@ -63,14 +63,14 @@ export const fileReadOp: Operation = {
     outputs: {
       content: {
         businessName: 'content',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'string',
         required: true,
         description: '文件内容'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息（ENOENT/EACCES/EISDIR）'

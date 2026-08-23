@@ -54,17 +54,20 @@ import type { RecognizedIntent, StackEntry, Address, Value } from '../l1/types.j
 import type { ExecutionState } from '../l1/execution-state.js'
 import type { Experience, ParamRef, CompileOptions, PreProcessing, ConditionalJudgment, OpStep } from './experience.js'
 import type { Expr } from '../l2/builtins/evaluate-expr.js'
+import type { OperationFormalSpec } from '../l2/operation.js'
 import { generateId, now } from '../l1/id.js'
 import { ERROR_REGISTER, GLOBAL_ERR } from '../l2/errors.js'
 import {
   GLOBAL_PATH,
   LEGACY_PATH_REGISTER
 } from './crr-config.js'
+import { buildEnvMap, indexOutputsByName } from './expr-env-builder.js'
 
 // ============== Registry 接口（避免循环依赖）==============
 
 export interface L2RegistryLike {
   has(name: string): boolean
+  getSpec(name: string): OperationFormalSpec | undefined
 }
 
 // ============== 寄存器命名约定 ===============
@@ -127,6 +130,12 @@ export function compileExperience(
 
   const entries: StackEntry[] = []
 
+  // CRR T-1.6: 聚合经验可见的 outputsByName (从每个 step 的 outputs[*].name 反查 op formalSpec)
+  // 注意: 这是经验级聚合,即"本经验内可见的输出 slot 名集合"
+  // 主要用于 evaluate_expr env 填充
+  const outputsByName = aggregateOutputsByName(exp, ctx)
+  const inputNames = new Set(Object.keys(exp.inputs ?? {}))
+
   // Step 0: 输入绑定 (legacy + new 路径语义相同 —— $r_input_<key>)
   entries.push(...bindInputs(exp, ctx))
 
@@ -139,9 +148,63 @@ export function compileExperience(
   }
 
   // Step 2+3: 条件判断链 + target-op 路径
-  entries.push(...compilePathSelection(exp, exp.conditional_judgment ?? [], ctx))
+  entries.push(...compilePathSelection(exp, exp.conditional_judgment ?? [], ctx, outputsByName, inputNames))
 
   return entries
+}
+
+/**
+ * CRR T-1.6: 聚合经验内可见的 outputsByName
+ *
+ * 索引: 经验侧 step.outputs 的 KEY (e.g. 'bytes_written') → FormalParam
+ * - 不是用 '$r_<X>' 中的 X 当 key —— X 是 manual legacy 简称 (e.g. '$r_bytes')
+ * - 正确做法是:用 experience 侧 key (e.g. 'bytes_written') 反查 spec.outputs[businessName]
+ *
+ * 用于 evaluate_expr env map 填充 —— var.name === '$r_<X>' 解析:
+ *   - 从 var.name 反查 'X' (如 '$r_bytes' → 'bytes')
+ *   - 但更准确是: collectVarNames 后,解析器在 outputsByName 里查 'bytes' 这种短名
+ *
+ * 实际逻辑见 resolveVar() —— 它接受 outputsByName 索引并按 '$r_<X>' 反查 X
+ */
+function aggregateOutputsByName(
+  exp: Experience,
+  ctx: CompileCtx
+): Map<string, import('../l2/operation.js').FormalParam> {
+  const out = new Map<string, import('../l2/operation.js').FormalParam>()
+  const collect = (step: OpStep): void => {
+    if (ctx.experiences.has(step.operation)) return // 嵌套 experience 不输出到本 env
+    const spec = ctx.registry.getSpec(step.operation)
+    if (!spec) return
+    for (const [expKey, ref] of Object.entries(step.outputs ?? {})) {
+      if (ref.kind !== 'register') continue
+      // ref.name 可能是 '$r_<X>' / '$r_err' / '$err'
+      // experience 侧 expKey 对应 op 侧 spec.outputs[opKey] (通常同名)
+      const fp = spec.outputs[expKey]
+      if (fp) {
+        // 按 var.name 的 $r_<X> 后缀 X 来索引(供 resolveVar 按 '$r_X' 反查)
+        const legacyMatch = ref.name.match(/^\$r_(.+)$/)
+        if (legacyMatch) {
+          const aliasName = legacyMatch[1]
+          if (aliasName === 'err') {
+            out.set('err', fp)
+          } else {
+            // 同 fp 可能被多个 aliasName 索引 (罕见,但允许)
+            out.set(aliasName, fp)
+            // 也按 op businessName 索引
+            out.set(fp.businessName, fp)
+          }
+        } else if (ref.name === '$err') {
+          out.set('err', fp)
+        } else if (ref.name === '$path' || ref.name === '$r_path') {
+          // path-mark,不再输出到 outputs 索引(由 buildEnvMap 的 global 分支处理)
+          void 0
+        }
+      }
+    }
+  }
+  for (const pp of exp.pre_processing ?? []) collect(pp as unknown as OpStep)
+  for (const path of exp.target_op.paths) for (const step of path.steps) collect(step)
+  return out
 }
 
 // ============== 编译上下文 ===============
@@ -159,6 +222,8 @@ interface CompileCtx {
   allocator: import('../l1/execution-state.js').FrameScopeAllocator | null
   /** CRR new path 用：enterScope 拿到的 scopeId,供 allocate* 调用 */
   scopeId: string | null
+  /** 调试: 当前正在编译的 op 名(供错误信息使用) */
+  currentOpName?: string
 }
 
 // ============== Step 0: 输入绑定 ===============
@@ -192,7 +257,13 @@ function bindInputs(exp: Experience, ctx: CompileCtx): StackEntry[] {
 
 // ============== Step 2+3: 路径选择（judgment 链）==============
 
-function compilePathSelection(exp: Experience, judgments: ConditionalJudgment[], ctx: CompileCtx): StackEntry[] {
+function compilePathSelection(
+  exp: Experience,
+  judgments: ConditionalJudgment[],
+  ctx: CompileCtx,
+  outputsByName: Map<string, import('../l2/operation.js').FormalParam>,
+  inputNames: Set<string>
+): StackEntry[] {
   // 无 judgment → 直接编译 default path
   if (judgments.length === 0) {
     return compilePathSteps(exp, exp.target_op.default_path, ctx)
@@ -204,9 +275,9 @@ function compilePathSelection(exp: Experience, judgments: ConditionalJudgment[],
   // else 分支：显式 else_path 优先；否则继续评估后续 judgments（链式 if-else-if）
   const elseEntries = j.else_path
     ? compilePathSteps(exp, j.else_path, ctx)
-    : compilePathSelection(exp, judgments.slice(1), ctx)
+    : compilePathSelection(exp, judgments.slice(1), ctx, outputsByName, inputNames)
 
-  return compileBranch(j, thenEntries, elseEntries, ctx)
+  return compileBranch(j, thenEntries, elseEntries, ctx, outputsByName, inputNames)
 }
 
 function compilePathSteps(exp: Experience, pathId: string, ctx: CompileCtx): StackEntry[] {
@@ -222,12 +293,17 @@ function compilePathSteps(exp: Experience, pathId: string, ctx: CompileCtx): Sta
  *
  * CRR new path (T-1.3): cond/judge 使用 allocator 分配 ($S<scopeId>.cond<j> / .judge<j>);
  *                       path-mark 使用 $path (GLOBAL_PATH);error alias 使用 $err (GLOBAL_ERR)
+ * CRR T-1.6: env map 显式填充 (evaluate_expr 的 inputs.env) —— new path 必须传 env,
+ *   否则 var.name='$r_<businessName>' 找不到 $S<scope>.out<k> 而 VARIABLE_NOT_FOUND。
+ *   legacy path 不传 env,使用 fallback `?? name` 语义(原等价行为)。
  */
 function compileBranch(
   j: ConditionalJudgment,
   thenEntries: StackEntry[],
   elseEntries: StackEntry[],
-  ctx: CompileCtx
+  ctx: CompileCtx,
+  outputsByName?: Map<string, import('../l2/operation.js').FormalParam>,
+  inputNames?: Set<string>
 ): StackEntry[] {
   // 源头取反：not(condition_expr)
   const negated: Expr = {
@@ -256,20 +332,37 @@ function compileBranch(
     ? [makeMove({ kind: 'literal', value: j.else_path }, { kind: 'internal', name: pathMarkName }), ...elseEntries]
     : elseEntries // 链式递归（无显式 else_path）时由内层分支自行标记
 
+  // CRR T-1.6: env map 构造 —— 仅 new path 强制填充
+  let envInputs: Record<string, Address> | null = null
+  let envSidecar: StackEntry[] = []
+  if (ctx.newPath && outputsByName && inputNames) {
+    const env = buildEnvMap(j.trigger.condition_expr, ctx.scopeId, outputsByName, inputNames)
+    // env 放到一个临时寄存器的 literal (object literal 作为 evaluate_expr 的 env 输入)
+    const envRegName = ctx.allocator!.allocateArgtmpSlot(ctx.scopeId!)
+    envSidecar.push(
+      makeMove({ kind: 'literal', value: env as unknown as Value }, { kind: 'internal', name: envRegName })
+    )
+    envInputs = { env: { kind: 'internal', name: envRegName } }
+  }
+
   return [
     // [0] AST literal → 寄存器
     makeMove(
       { kind: 'literal', value: negated as unknown as Value },
       { kind: 'internal', name: condName }
     ),
-    // [1] evaluate_expr 求值
+    // [1] evaluate_expr 求值 (env inputs as sidecar move before)
+    ...envSidecar,
     {
       id: generateId('op'),
       parentIntentId: null,
       createdAt: now(),
       kind: 'execute_op',
       operation: 'evaluate_expr',
-      inputs: { expr: { kind: 'internal', name: condName } },
+      inputs: {
+        expr: { kind: 'internal', name: condName },
+        ...(envInputs ?? {})
+      },
       outputs: {
         result: { kind: 'internal', name: judgeName },
         error: { kind: 'internal', name: ctx.newPath ? GLOBAL_ERR : ERROR_REGISTER }
@@ -322,13 +415,15 @@ function compileSteps(steps: OpStep[], ctx: CompileCtx): StackEntry[] {
  * - literal → 先 move 到临时寄存器 (legacy: $r_argtmp_N counter; new path: $S<scope>.argtmp<k> round-robin pool size=8)
  *   （L1 约束：execute_op.inputs 只能是 internal）
  * - input → $r_input_<name>（Step 0 已绑定,legacy + new 共用）
- * - register → 原名直接引用 (P3 将改为结构化 {exp?, outKey} defer 绑定)
+ * - register → legacy: 原 register 字符串; new path: 查 formalSpec[k].slotIndex → $S<scopeId>.in<k>/.out<k>
+ *   - error alias slot (slotIndex === ERROR_SLOT_INDEX) → $err (GLOBAL_ERR)
  *
- * CRR T-1.3: literal sidecar 改走 FrameScopeAllocator.allocateArgtmpSlot —— round-robin 替换自增计数器
+ * CRR T-1.3/T-1.2: register kind 在 new path 下走 slotIndex,scope 从 currentScope() 拿
  */
 function expandRefs(
   refs: Record<string, ParamRef>,
   direction: 'in' | 'out',
+  spec: OperationFormalSpec | undefined,
   ctx: CompileCtx
 ): { moves: StackEntry[]; addrs: Record<string, Address> } {
   const moves: StackEntry[] = []
@@ -346,7 +441,29 @@ function expandRefs(
     } else if (ref.kind === 'input') {
       addrs[name] = { kind: 'internal', name: INPUT_PREFIX + ref.name }
     } else {
-      addrs[name] = { kind: 'internal', name: ref.name }
+      // register kind
+      if (ctx.newPath && spec) {
+        // 查 formalSpec[k].slotIndex
+        const fp = (direction === 'in' ? spec.inputs : spec.outputs)[name]
+        if (!fp) {
+          throw new Error(
+            `L3 compile: op '${ctx.currentOpName ?? '?'}' has no formalSpec for ${direction}.${name} ` +
+            `(ParamRef points to non-existent slot)`
+          )
+        }
+        if (fp.slotIndex === 99) {
+          // ERROR_SLOT_INDEX → $err
+          addrs[name] = { kind: 'internal', name: GLOBAL_ERR }
+        } else {
+          const slotName = direction === 'in'
+            ? `$S${ctx.scopeId}.in${fp.slotIndex}`
+            : `$S${ctx.scopeId}.out${fp.slotIndex}`
+          addrs[name] = { kind: 'internal', name: slotName }
+        }
+      } else {
+        // legacy path 直接用 ref.name (legacy register 字符串)
+        addrs[name] = { kind: 'internal', name: ref.name }
+      }
     }
   }
   return { moves, addrs }
@@ -355,11 +472,8 @@ function expandRefs(
 /**
  * 编译单个 L2 op 调用：sidecar moves + OpEntry。
  *
- * CRR T-1.3: outputs 中使用 register ref 时,legacy 接受任意名称 (受 Phase C MVP 限制
- *   仅能引用同 frame output 变量);new path 透传 literal name —— 但现状 compile 路径
- *   不会特判 'kind: register' 的语义,执行时由 L1 address-resolver 按 name 在
- *   internalStore 查找。scopeId-隔离通过 K4 论证(同 frame output 在同一 scope 下,
- *   跨 frame 由不同 scope prefix 保证隔离)。
+ * CRR T-1.2: 新路径下,output register ref 通过 formalSpec.outputs[k].slotIndex 解析,
+ *   构造 $S<scopeId>.out<k> 名字。legacy 路径仍用 ref.name 字面量。
  */
 export function compileOp(
   opName: string,
@@ -368,8 +482,10 @@ export function compileOp(
   idPrefix: string,
   ctx: CompileCtx
 ): StackEntry[] {
-  const ins = expandRefs(inputRefs, 'in', ctx)
-  const outs = expandRefs(outputRefs, 'out', ctx)
+  const spec = ctx.registry.getSpec(opName)
+  ctx.currentOpName = opName
+  const ins = expandRefs(inputRefs, 'in', spec, ctx)
+  const outs = expandRefs(outputRefs, 'out', spec, ctx)
   return [
     ...ins.moves,
     ...outs.moves, // outputs 一般无 literal，但保持对称（会 throw）

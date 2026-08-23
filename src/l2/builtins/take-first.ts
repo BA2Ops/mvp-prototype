@@ -39,14 +39,14 @@ export const takeFirstOp: Operation = {
     inputs: {
       items: {
         businessName: 'items',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'object',  // list<any>
         required: true,
         description: '输入列表'
       },
       n: {
         businessName: 'n',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'number',
         required: false,
         description: '取前 n 个（默认 1）'
@@ -55,21 +55,21 @@ export const takeFirstOp: Operation = {
     outputs: {
       taken: {
         businessName: 'taken',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'object',  // list<any>
         required: true,
         description: '取出的列表'
       },
       count: {
         businessName: 'count',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'number',
         required: true,
         description: 'taken 长度'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

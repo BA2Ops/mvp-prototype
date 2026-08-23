@@ -39,21 +39,21 @@ export const sortByOp: Operation = {
     inputs: {
       items: {
         businessName: 'items',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'object',  // list<object>
         required: true,
         description: '待排序对象列表'
       },
       by: {
         businessName: 'by',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'string',
         required: true,
         description: '排序字段名'
       },
       desc: {
         businessName: 'desc',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'boolean',
         required: false,
         description: '降序（默认 false 升序）'
@@ -62,21 +62,21 @@ export const sortByOp: Operation = {
     outputs: {
       sorted: {
         businessName: 'sorted',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'object',  // list<object>
         required: true,
         description: '排序后列表'
       },
       count: {
         businessName: 'count',
-        register: '$r4',
+        register: '$r4', slotIndex: 4,
         type: 'number',
         required: true,
         description: '列表长度'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

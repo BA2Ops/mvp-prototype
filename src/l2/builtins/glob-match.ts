@@ -54,14 +54,14 @@ export const globMatchOp: Operation = {
     inputs: {
       pattern: {
         businessName: 'pattern',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'string',
         required: true,
         description: 'glob 模式（如 *.ts、**/*.test.ts）'
       },
       cwd: {
         businessName: 'cwd',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'path',
         required: false,
         description: '搜索根目录（默认 process.cwd()）'
@@ -70,21 +70,21 @@ export const globMatchOp: Operation = {
     outputs: {
       matches: {
         businessName: 'matches',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'object',  // list<string>
         required: true,
         description: '匹配的文件路径列表'
       },
       count: {
         businessName: 'count',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'number',
         required: true,
         description: '匹配数'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

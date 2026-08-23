@@ -65,28 +65,28 @@ export const grepSearchOp: Operation = {
     inputs: {
       pattern: {
         businessName: 'pattern',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'string',
         required: true,
         description: '搜索模式'
       },
       path: {
         businessName: 'path',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'path',
         required: true,
         description: '文件或目录路径'
       },
       regex: {
         businessName: 'regex',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'boolean',
         required: false,
         description: '正则模式（默认 false 字面量匹配）'
       },
       context_lines: {
         businessName: 'context_lines',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'number',
         required: false,
         description: '前后上下文行数（默认 0）'
@@ -95,21 +95,21 @@ export const grepSearchOp: Operation = {
     outputs: {
       matches: {
         businessName: 'matches',
-        register: '$r4',
+        register: '$r4', slotIndex: 4,
         type: 'object',  // list<GrepMatch>
         required: true,
         description: '匹配项列表 [{ file, line, content }]'
       },
       count: {
         businessName: 'count',
-        register: '$r5',
+        register: '$r5', slotIndex: 5,
         type: 'number',
         required: true,
         description: '匹配数'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

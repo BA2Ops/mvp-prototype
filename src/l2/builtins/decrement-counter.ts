@@ -33,7 +33,7 @@ export const decrementCounterOp: Operation = {
     inputs: {
       value: {
         businessName: 'value',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'number',
         required: true,
         description: '当前计数'
@@ -42,14 +42,14 @@ export const decrementCounterOp: Operation = {
     outputs: {
       new_value: {
         businessName: 'new_value',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'number',
         required: true,
         description: '当前值 - 1'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

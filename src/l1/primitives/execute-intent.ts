@@ -30,6 +30,8 @@
 
 import type { IntentEntry } from '../types.js'
 import type { ExecutionState } from '../execution-state.js'
+import type { CompileOptions } from '../../l3/experience.js'
+import { isCrrNewPathEnabled } from '../main-loop.js'
 
 /**
  * execute_intent 参数错误
@@ -39,6 +41,26 @@ export class ExecuteIntentError extends Error {
     super(message)
     this.name = 'ExecuteIntentError'
   }
+}
+
+/**
+ * CRR T-1.5/T-1.6: 为当前 frame 计算 CompileOptions
+ *
+ * 主循环 T-1.5 入口已根据 crrNewPathEnabled() 决定是否 enterScope,
+ * executeIntent 需传递相应 CompileOptions 给 L3 compile —— 否则 compile 看不到 useFixedSlotConvention,
+ * 会产生 legacy 产物 ($r_argtmp_N 等),与 frame.scopeId 不一致,导致 U_max 口径崩溃。
+ *
+ * 判定逻辑:
+ *   - frame.scopeId !== undefined → 启用 new path
+ *   - 否则 legacy (默认 false 路径)
+ *
+ * P2+ 接入: options 走 service 传递 / frame metadata (避免全局开关)
+ */
+function getCompileOptionsForFrame(_entry: IntentEntry): CompileOptions | undefined {
+  if (isCrrNewPathEnabled()) {
+    return { useFixedSlotConvention: true }
+  }
+  return undefined
 }
 
 /**
@@ -70,7 +92,7 @@ export async function executeIntent(
 
   // ============ Step 2: 调 L3 compile ============
   // 异常会在这里 throw，由主循环 catch（冒泡机制）处理
-  const children = await state.l3.compile(entry.intent, state)
+  const children = await state.l3.compile(entry.intent, state, getCompileOptionsForFrame(entry))
   entry.children = children
 
   // ============ Step 3: 把 children 压入指令栈（逆序）============

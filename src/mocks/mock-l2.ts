@@ -148,6 +148,7 @@ export function createMockL2(): MockL2 {
         x: {
           businessName: 'x',
           register: '$r0',
+          slotIndex: 0,
           type: 'number',
           required: true,
           description: 'input number'
@@ -157,6 +158,7 @@ export function createMockL2(): MockL2 {
         result: {
           businessName: 'result',
           register: '$r1',
+          slotIndex: 1,
           type: 'number',
           required: true,
           description: 'doubled value'

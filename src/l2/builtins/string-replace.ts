@@ -41,35 +41,35 @@ export const stringReplaceOp: Operation = {
     inputs: {
       text: {
         businessName: 'text',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'string',
         required: true,
         description: '输入文本'
       },
       find: {
         businessName: 'find',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'string',
         required: true,
         description: '查找字符串'
       },
       replace: {
         businessName: 'replace',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'string',
         required: true,
         description: '替换字符串'
       },
       regex: {
         businessName: 'regex',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'boolean',
         required: false,
         description: '是否正则（默认 false 字面量）'
       },
       replace_all: {
         businessName: 'replace_all',
-        register: '$r4',
+        register: '$r4', slotIndex: 4,
         type: 'boolean',
         required: false,
         description: '全局替换（默认 false 仅第一处）'
@@ -78,21 +78,21 @@ export const stringReplaceOp: Operation = {
     outputs: {
       result: {
         businessName: 'result',
-        register: '$r5',
+        register: '$r5', slotIndex: 5,
         type: 'string',
         required: true,
         description: '替换后文本'
       },
       count: {
         businessName: 'count',
-        register: '$r6',
+        register: '$r6', slotIndex: 6,
         type: 'number',
         required: true,
         description: '替换次数'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息'

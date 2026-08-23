@@ -49,28 +49,28 @@ export const fileWriteOp: Operation = {
     inputs: {
       path: {
         businessName: 'path',
-        register: '$r0',
+        register: '$r0', slotIndex: 0,
         type: 'path',
         required: true,
         description: '目标文件路径'
       },
       content: {
         businessName: 'content',
-        register: '$r1',
+        register: '$r1', slotIndex: 1,
         type: 'string',
         required: true,
         description: '写入内容'
       },
       mode: {
         businessName: 'mode',
-        register: '$r2',
+        register: '$r2', slotIndex: 2,
         type: 'string',
         required: false,
         description: "'overwrite'（默认）或 'append'"
       },
       encoding: {
         businessName: 'encoding',
-        register: '$r3',
+        register: '$r3', slotIndex: 3,
         type: 'string',
         required: false,
         description: '字符编码（默认 utf-8）'
@@ -79,14 +79,14 @@ export const fileWriteOp: Operation = {
     outputs: {
       bytes_written: {
         businessName: 'bytes_written',
-        register: '$r4',
+        register: '$r4', slotIndex: 4,
         type: 'number',
         required: true,
         description: '写入字节数'
       },
       error: {
         businessName: 'error',
-        register: '$r_err',
+        register: '$r_err', slotIndex: 99,
         type: 'object',
         required: false,
         description: '错误信息（ENOENT/EACCES/EISDIR）'
