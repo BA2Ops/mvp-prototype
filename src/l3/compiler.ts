@@ -150,7 +150,143 @@ export function compileExperience(
   // Step 2+3: 条件判断链 + target-op 路径
   entries.push(...compilePathSelection(exp, exp.conditional_judgment ?? [], ctx, outputsByName, inputNames))
 
+  // Step 5 (CRR P2/T-2.2): post-bindings move generation pass
+  // 遍历 exp.outputs_bindings, 对 persist:true 的 entry 生成 publicStore move。
+  // - 未声明 / persist:false 不生成 (T-B2 反向断言保护)
+  // - move 的 from 是 binding.register ($r_<X> legacy 或 $S<scope>.out<k> new path)
+  // - move 的 to 是 { kind: 'public', name: `${exp.id}.${key}` }
+  entries.push(...compilePostBindings(exp, ctx))
+
   return entries
+}
+
+/**
+ * CRR P2/T-2.2: post-bindings Step5 move generation
+ *
+ * @see docs/mvp/19c-implementation-plan.md §三 T-2.2
+ * @see docs/mvp/19-register-file-core.md §C5
+ *
+ * 动机:
+ * - MVP 默认保持 internalStore / publicStore 双区隔离 (D-T1)
+ * - 经验选择性声明某些 output 提升到 publicStore,供 pipeline / 调用方读取
+ * - opt-in 原则: 默认不提升,防止 K5 growth channel 污染
+ *
+ * 行为:
+ * - 遍历 exp.outputs_bindings
+ * - 跳过 persist !== true 的 binding
+ * - 对每个 persist:true binding 生成一条 move:
+ *     from = { kind: 'internal', name: binding.register }
+ *     to   = { kind: 'public',   name: `${exp.id}.${key}` }
+ * - 嵌套 scope 下的 new path:binding.register = $S<scope>.out<k>,address-resolver
+ *   直接读 internalStore.get(<name>) → 与 round-robin pool 无关
+ *
+ * 静态检查 (R-4🟢低):
+ * - binding.register 未在 pre_processing / target_op.paths[*].steps 的 outputs 中出现 → warn
+ *   (不拒绝,仅 console.warn —— 避免过度限制嵌套 experience 场景)
+ * - exp.outputs_bindings[key] 的 key 不在 exp.outputs 中 → throw (schema 一致性)
+ *
+ * @returns 生成的 move entries (空数组 if 无 binding 或全 persist:false)
+ */
+function compilePostBindings(
+  exp: Experience,
+  ctx: CompileCtx
+): StackEntry[] {
+  const bindings = exp.outputs_bindings
+  if (!bindings) return []
+
+  const entries: StackEntry[] = []
+  const validRegisterNames = collectRegisterNames(exp, ctx)
+  const outputsByName = aggregateOutputsByName(exp, ctx)
+
+  for (const [key, binding] of Object.entries(bindings)) {
+    // 静态校验 1: key 必须出现在 exp.outputs
+    if (!(key in (exp.outputs ?? {}))) {
+      throw new Error(
+        `L3 compile: experience '${exp.id}' has outputs_bindings['${key}'] ` +
+        `but no matching entry in exp.outputs`
+      )
+    }
+    // 跳过 persist !== true (默认 false / 显式 false)
+    if (binding.persist !== true) continue
+
+    // CRR T-2.2 + T-2.3 + P1/T-1.6: 在 new path 下,binding.register (声明的 '$r_<X>')
+    // 需要翻译为 scope-prefixed form ('$S<scopeId>.out<k>')。
+    // 如果声明已是 $S<scope>.out<k> 形式,跳过翻译(幂等)。
+    const resolvedRegister = ctx.newPath
+      ? resolveBindingRegisterForNewPath(binding.register, key, ctx, outputsByName)
+      : binding.register
+
+    // 静态校验 2: register 应在 known set 中 (warn only) —— 使用翻译后的名称
+    if (!validRegisterNames.has(binding.register) && !validRegisterNames.has(resolvedRegister)) {
+      console.warn(
+        `[CRR T-2.2] experience '${exp.id}' outputs_bindings['${key}'].register='${binding.register}' ` +
+        `not found in any step's outputs (will be silently ignored if internalStore doesn't have it)`
+      )
+    }
+
+    entries.push(makeMove(
+      { kind: 'internal', name: resolvedRegister },
+      { kind: 'public', name: `${exp.id}.${key}` }
+    ))
+  }
+  return entries
+}
+
+/**
+ * CRR T-2.2: new path 下 outputs_bindings.register 从 '$r_<X>' 翻译为 '$S<scopeId>.out<k>'
+ *
+ * 翻译策略:
+ *  - 已是 $S<scope>.out<k> 形式: 幂等返回
+ *  - 是 '$r_err' / '$err': 返回 GLOBAL_ERR
+ *  - 是 '$r_<X>' 形式: 从 outputsByName 索引 X 查到 FormalParam, 返回 $S<scopeId>.out<slotIndex>
+ *  - 未知名称: 返回原值 (运行期会 VARIABLE_NOT_FOUND,与 legacy 保持等价诊断信号)
+ */
+function resolveBindingRegisterForNewPath(
+  register: string,
+  bindingKey: string,
+  ctx: CompileCtx,
+  outputsByName: Map<string, import('../l2/operation.js').FormalParam>
+): string {
+  if (!ctx.scopeId) return register
+  if (register.startsWith('$S') && register.includes('.out')) return register
+  if (register === '$err' || register === '$r_err') return GLOBAL_ERR
+  // 优先按 binding.key (= exp.outputs 的 key = step.outputs 的 key) 反查
+  // 而不是 register 的 $r_<aliasName>。原因: aliasName 可能被多个 step 重名覆写
+  // (如 safe_write abort path 的 evaluate_expr.outputs.result 也用 $r_bytes)
+  const fp = outputsByName.get(bindingKey)
+  if (fp && fp.slotIndex !== 99) {
+    return `$S${ctx.scopeId}.out${fp.slotIndex}`
+  }
+  // fallback: 按 aliasName 查
+  const legacyMatch = register.match(/^\$r_(.+)$/)
+  if (legacyMatch) {
+    const aliasName = legacyMatch[1]
+    const fp2 = outputsByName.get(aliasName)
+    if (fp2 && fp2.slotIndex !== 99) {
+      return `$S${ctx.scopeId}.out${fp2.slotIndex}`
+    }
+  }
+  return register
+}
+
+/**
+ * CRR P2/T-2.2: 收集本经验所有 step outputs 写入的 register name 集合
+ *
+ * 用于 compilePostBindings 的静态校验(register 是否引用合法)
+ */
+function collectRegisterNames(
+  exp: Experience,
+  _ctx: CompileCtx
+): Set<string> {
+  const out = new Set<string>()
+  const collect = (step: OpStep): void => {
+    for (const ref of Object.values(step.outputs ?? {})) {
+      if (ref.kind === 'register') out.add(ref.name)
+    }
+  }
+  for (const pp of exp.pre_processing ?? []) collect(pp as unknown as OpStep)
+  for (const path of exp.target_op.paths) for (const step of path.steps) collect(step)
+  return out
 }
 
 /**

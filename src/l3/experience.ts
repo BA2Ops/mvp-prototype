@@ -232,8 +232,46 @@ export interface Experience {
     failure?: Record<string, string>
   }
 
+  /**
+   * CRR P2/C5: outputs_bindings 持久化声明
+   *
+   * 设计动机（doc 19 §C5 + doc 19b §三 R5.4）:
+   * - MVP 默认保持 internalStore / publicStore 双区隔离 (doc 12 K3)
+   * - 部分场景需要把内部输出“提升”到 publicStore，供上层 pipeline 或调用方读
+   * - 选择性、显式声明，默认不提升（防止 K5 growth channel 污染）
+   *
+   * Schema:
+   *   key = 经验输出 schema 的 key (必须出现在 exp.outputs)
+   *   register = 该输出对应的寄存器名 ($r_<X> 或 $S<scope>.out<k>)
+   *   type = ValueType,用于 pipeline.collect 类型校验
+   *   persist = true 才生成 move 到 publicStore；false 视为未声明
+   *
+   * P2 验收场景：
+   *   - safe_write.bytes_written / read_file_with_default.content 显式 persist:true
+   *   - replace_in_file 故意不声明,验证 publicStore.size()===0
+   *
+   * P4 T-4.3 不在清理范围（本字段不是 deprecated,是 persistent field）。
+   */
+  outputs_bindings?: Record<string, OutputBinding>
+
   /** 用户反馈历史（MVP 仅存储，不自动演化）*/
   feedback_history?: FeedbackRecord[]
+}
+
+/**
+ * CRR P2/C5: 单个 output binding 声明
+ *
+ * @see Experience.outputs_bindings
+ */
+export interface OutputBinding {
+  /** 对应的 internal register 名（legacy '$r_<X>' 或 new path '$S<scope>.out<k>'）*/
+  register: string
+  /** 输出类型（与 ParamSpec.type 互参一致,供 pipeline.collect 插值校验）*/
+  type: 'string' | 'number' | 'boolean' | 'path' | 'object' | 'any'
+  /** 是否持久化到 publicStore（默认 false,opt-in 原则）*/
+  persist?: boolean
+  /** 选填说明，用于 dev observability */
+  description?: string
 }
 
 /**

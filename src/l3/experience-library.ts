@@ -59,6 +59,10 @@ const readFile: Experience = {
   description: '读取文件内容。文件不存在时错误写入 $r_err（数据化，不抛出）。',
   inputs: { path: { type: 'path', required: true } },
   outputs: { content: { type: 'string', required: true } },
+  // CRR P2/T-2.4: 替换 PRIMARY_OUTPUT 表 → outputs_bindings 显式声明
+  outputs_bindings: {
+    content: { register: '$r_content', type: 'string', persist: true, description: '文件内容' }
+  },
   responses: {
     failure: {
       ENOENT: `读取失败：文件 {path} 不存在`,
@@ -104,6 +108,15 @@ const readFileWithDefault: Experience = {
     default_content: { type: 'string', required: true }
   },
   outputs: { content: { type: 'string', required: true } },
+  // CRR P2/T-2.3: 显式声明 content 提升到 publicStore
+  outputs_bindings: {
+    content: {
+      register: '$r_content',
+      type: 'string',
+      persist: true,
+      description: '文件内容 (或默认内容)'
+    }
+  },
   pre_processing: [{
     id: 'try_read',
     operation: 'file_read',
@@ -158,6 +171,10 @@ const checkFileExists: Experience = {
   handleError: true,
   inputs: { path: { type: 'path', required: true } },
   outputs: { exists: { type: 'boolean', required: true } },
+  // CRR P2/T-2.4: outputs_bindings
+  outputs_bindings: {
+    exists: { register: '$r_exists', type: 'boolean', persist: true, description: '文件是否存在' }
+  },
   pre_processing: [{
     id: 'probe',
     operation: 'file_read',
@@ -198,6 +215,10 @@ const writeFile: Experience = {
     content: { type: 'string', required: true }
   },
   outputs: { bytes_written: { type: 'number', required: true } },
+  // CRR P2/T-2.4: outputs_bindings
+  outputs_bindings: {
+    bytes_written: { register: '$r_bytes', type: 'number', persist: true, description: '写入字节数' }
+  },
   responses: {
     failure: { '*': `写入 {path} 失败：{err.message}` }
   },
@@ -237,6 +258,15 @@ const safeWrite: Experience = {
     content: { type: 'string', required: true }
   },
   outputs: { bytes_written: { type: 'number', required: true } },
+  // CRR P2/T-2.3: 显式声明 bytes_written 提升到 publicStore
+  outputs_bindings: {
+    bytes_written: {
+      register: '$r_bytes',
+      type: 'number',
+      persist: true,
+      description: '写入字节数 (仅 success path 生效;abort path 为 0)'
+    }
+  },
   pre_processing: [{
     id: 'probe_existing',
     operation: 'file_read',
@@ -304,6 +334,10 @@ const findFiles: Experience = {
     matches: { type: 'object', required: true },
     count: { type: 'number', required: true }
   },
+  // CRR P2/T-2.4: outputs_bindings
+  outputs_bindings: {
+    matches: { register: '$r_matches', type: 'object', persist: true, description: '匹配的文件列表' }
+  },
   target_op: {
     base_op: 'glob_match',
     default_path: 'normal',
@@ -341,6 +375,10 @@ const searchInFiles: Experience = {
     matches: { type: 'object', required: true },
     count: { type: 'number', required: true }
   },
+  // CRR P2/T-2.4: outputs_bindings
+  outputs_bindings: {
+    matches: { register: '$r_matches', type: 'object', persist: true, description: '匹配的文件列表' }
+  },
   target_op: {
     base_op: 'grep_search',
     default_path: 'normal',
@@ -377,6 +415,10 @@ const runShell: Experience = {
   outputs: {
     stdout: { type: 'string', required: true },
     exit_code: { type: 'number', required: true }
+  },
+  // CRR P2/T-2.4: outputs_bindings (取 stdout 作主输出)
+  outputs_bindings: {
+    stdout: { register: '$r_stdout', type: 'string', persist: true, description: '命令标准输出' }
   },
   target_op: {
     base_op: 'shell_exec',
@@ -417,6 +459,10 @@ const replaceInFile: Experience = {
   },
   outputs: {
     count: { type: 'number', required: true }
+  },
+  // CRR P2/T-2.4: outputs_bindings
+  outputs_bindings: {
+    count: { register: '$r_count', type: 'number', persist: true, description: '替换次数' }
   },
   handleError: true,
   responses: {

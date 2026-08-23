@@ -28,18 +28,22 @@ import { ExperienceService } from '../l3/experience-service.js'
 import { resolveResponse } from '../l3/response.js'
 import { MockL4, UnrecognizedInputError } from './mock-llm.js'
 
-/** 各经验的主输出寄存器（pipeline 展示用；L4/pipeline 理解业务细节是合理的）*/
-const PRIMARY_OUTPUT: Record<string, string> = {
-  read_file: '$r_content',
-  read_file_with_default: '$r_content',
-  check_file_exists: '$r_exists',
-  write_file: '$r_bytes',
-  safe_write: '$r_bytes',
-  find_files: '$r_matches',
-  search_in_files: '$r_matches',
-  run_shell: '$r_stdout',
-  replace_in_file: '$r_count'
-}
+/**
+ * CRR P2/T-2.4: pipeline.collect 去 PRIMARY_OUTPUT 硬编码
+ *
+ * 之前: 人工维护 expId → register 名 的 Record<string,string> 表
+ * 问题: 经验新加主输出 → 忘了同步修改 PRIMARY_OUTPUT (同步债,9 条经验 不一致)
+ *
+ * 现在: 走 publicStore (CRR P2 outputs_bindings 显式声明 → post-bindings move → publicStore)
+ * - exp.outputs_bindings[firstPersistKey] = exp 的 "主输出" (首个 persist:true binding)
+ * - pipeline.collect 直接读 publicStore.get(`${expId}.${key}`)
+ * - 经验未声明 bindings → primary = null (不读 internalStore)
+ * - 经验多个 bindings → primary = 首个 persist:true binding (与 errors 语义一致)
+ *
+ * 透退 fallback (P4 删除):
+ * - 若 publicStore 无该 entry, 回退读 internalStore[$r_<X>] (legacy)
+ * - 仅用于 P2→P4 过渡期, P4 T-4.3 完整删除
+ */
 
 /** 单次对话的执行结果 */
 export interface SayResult {
@@ -182,16 +186,46 @@ export class AgentPipeline {
     const message = exp
       ? resolveResponse(exp, registers)
       : `已完成 ${intent.type}`
-    const primaryReg = PRIMARY_OUTPUT[intent.type]
+    const primary = this.extractPrimary(intent.type, exp, state)
     return {
       ok: true,
       message,
       intent,
-      primary: primaryReg ? (registers[primaryReg] ?? null) : null,
+      primary,
       registers,
       error: ((registers[GLOBAL_ERR] ?? registers[LEGACY_ERROR_REGISTER ?? ERROR_REGISTER] ?? null) as unknown) as OperationError | null,
       elapsedMs,
       utterance
     }
+  }
+
+  /**
+   * CRR P2/T-2.4: 从 publicStore 提取主输出
+   *
+   * 策略:
+   *  1. 读 exp.outputs_bindings, 找首个 persist:true binding
+   *  2. 从 publicStore.get(`${expId}.${key}`) 读值
+   *  3. 若 publicStore 没值 (未声明 / abort path), 回退读 internalStore[binding.register]
+   *  4. exp 未声明 bindings → primary = null
+   */
+  private extractPrimary(
+    expId: string,
+    exp: ReturnType<ExperienceService['getExperience']>,
+    state: ExecutionState
+  ): Value {
+    if (!exp?.outputs_bindings) return null
+    // 取首个 persist:true binding (作为语义主输出)
+    const primaryEntry = Object.entries(exp.outputs_bindings).find(([, b]) => b.persist === true)
+    if (!primaryEntry) return null
+    const [key, binding] = primaryEntry
+    // 优先 publicStore (T-2.2 post-bindings 写入)
+    const pubKey = `${expId}.${key}`
+    if (state.publicStore.has(pubKey)) {
+      return state.publicStore.get(pubKey)!
+    }
+    // fallback: internalStore[binding.register] (P2→P4 过渡期兼容)
+    return state.internalStore.has(binding.register)
+      ? state.internalStore.get(binding.register)!
+      : null
   }
 }

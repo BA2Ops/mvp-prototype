@@ -35,6 +35,22 @@ export async function executeMove(
   entry: MoveEntry,
   state: ExecutionState
 ): Promise<void> {
+  // CRR P2/T-2.2: post-bindings 写入 publicStore 是“best-effort”。
+  // - post-bindings 在 abort/error 路径下可能读不到源 register(未执行)
+  // - 地址解析包一个软握把:from.kind='internal' 且 to.kind='public' 且 source missing → warn + skip
+  // - 其他场景走原有严格语义(会抛 AddressError)
+  if (
+    entry.from.kind === 'internal' &&
+    entry.to.kind === 'public' &&
+    !state.internalStore.has(entry.from.name)
+  ) {
+    console.warn(
+      `[CRR T-2.2] post-bindings move skipped: source register '${entry.from.name}' not found ` +
+      `(target publicStore key '${entry.to.name}') — likely from error/abort path`
+    )
+    state.stack.pop()
+    return
+  }
   const value = await resolveAddress(entry.from, state)
   await writeAddress(entry.to, value, state)
   state.stack.pop()
