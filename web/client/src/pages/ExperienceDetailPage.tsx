@@ -5,6 +5,7 @@ import DagView from '../components/DagView'
 import XmlViewer from '../components/XmlViewer'
 import JsonViewer from '../components/JsonViewer'
 import MetadataEditor from '../components/MetadataEditor'
+import IoParamsPanel from '../components/IoParamsPanel'
 import type { XmlExperience } from '../../../shared/xml-schema'
 
 type Tab = 'dag' | 'xml' | 'l3' | 'stack'
@@ -83,6 +84,9 @@ export default function ExperienceDetailPage() {
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
         {/* 元数据编辑 */}
         <MetadataEditor detail={detail} onUpdate={load} />
+
+        {/* 输入/输出参数 */}
+        {xmlExp && <IoParamsPanel xmlExp={xmlExp} />}
 
         {/* Tab 切换 */}
         <div className="border-b border-gray-200">
