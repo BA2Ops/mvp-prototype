@@ -11,8 +11,6 @@
  */
 
 import { describe, test, expect, beforeEach } from 'vitest'
-import * as fs from 'fs/promises'
-import * as path from 'path'
 import { executeMove } from '../../src/l1/primitives/move.js'
 import {
   createInitialState,
@@ -24,16 +22,13 @@ import { AddressError } from '../../src/l1/address-resolver.js'
 import type { MoveEntry, Address } from '../../src/l1/types.js'
 import { generateId, now } from '../helpers.js'
 
-const FIXTURES_DIR = 'tests/fixtures/a4'
-
-describe('A4: move primitive（双区架构版）', () => {
+describe('A4: move primitive（双区架构版，file kind 相关用例已移除）', () => {
   let state: ExecutionState
 
-  beforeEach(async () => {
+  beforeEach(() => {
     const { registry: l2 } = createMockL2()
     const l3 = createMockL3([])
     state = createInitialState(l2, l3)
-    await fs.mkdir(FIXTURES_DIR, { recursive: true })
   })
 
   // ============== 跨区 move ==============
@@ -69,43 +64,6 @@ describe('A4: move primitive（双区架构版）', () => {
       expect(state.internalStore.get('$r0')).toBe('business_value')
     })
 
-    test('file → internal', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'source.txt')
-      await fs.writeFile(filePath, 'file data')
-
-      await executeMove(
-        move({ kind: 'file', path: filePath }, { kind: 'internal', name: '$r0' }),
-        state
-      )
-
-      expect(state.internalStore.get('$r0')).toBe('file data')
-    })
-
-    test('internal → file', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'output.txt')
-      state.internalStore.set('$r0', 'to write')
-
-      await executeMove(
-        move({ kind: 'internal', name: '$r0' }, { kind: 'file', path: filePath }),
-        state
-      )
-
-      const content = await fs.readFile(filePath, 'utf-8')
-      expect(content).toBe('to write')
-    })
-
-    test('public → file（业务数据写到文件）', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'business-output.txt')
-      state.publicStore.set('config', 'business data')
-
-      await executeMove(
-        move({ kind: 'public', name: 'config' }, { kind: 'file', path: filePath }),
-        state
-      )
-
-      const content = await fs.readFile(filePath, 'utf-8')
-      expect(content).toBe('business data')
-    })
   })
 
   // ============== 同区 move ==============

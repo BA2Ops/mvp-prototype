@@ -56,7 +56,7 @@ async function resolveInputs(
     if (!isInternalAddress(addr)) {
       throw new ExecuteOpError(
         `execute_op input '${name}' must be internal (got '${addr.kind}'). ` +
-        `Use move to copy from literal/public/file first.`
+        `Use move to copy from literal/public first.`
       )
     }
     resolved[name] = state.internalStore.get(addr.name)

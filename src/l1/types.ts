@@ -39,26 +39,28 @@ export type Value =
   | Value[]
   | { [key: string]: Value }
 
-// ============== Address（4 种 kind）==============
+// ============== Address（3 种 kind）==============
 /**
  * 地址类型
  *
- * 四种 kind：
+ * 三种 kind：
  * - literal：常量值（只作为 move 源）
  * - public：公共数据区（业务命名，持久）
  * - internal：内部寄存器（寄存器名，瞬态）
- * - file：文件系统（外部存储）
+ *
+ * 注：原先还有第 4 种 kind='file'（把文件系统当作可寻址存储，move(file→X)/move(X→file)
+ * 直接读写盘）。后来架构上明确"IO 职责一律由 L2 op 承担"（execute_op('file_read')/
+ * ('write_file')），L1 本身不再做任何 fs IO，故 file kind 被移除。详见 l1-design/02-instructions/move.md。
  *
  * 设计原则：
  * - literal 必须通过 move 命名后才能被 execute_op 使用
- * - execute_op 只能读写 internal（不允许 literal/public/file）
+ * - execute_op 只能读写 internal（不允许 literal/public）
  * - move 是唯一跨越数据区的桥梁
  */
 export type Address =
   | { kind: 'literal'; value: Value }
   | { kind: 'public'; name: string }
   | { kind: 'internal'; name: string }
-  | { kind: 'file'; path: string }
 
 // ============== Intent 类型 ==============
 /**
@@ -225,8 +227,4 @@ export function isPublicAddress(addr: Address): addr is { kind: 'public'; name: 
 
 export function isInternalAddress(addr: Address): addr is { kind: 'internal'; name: string } {
   return addr.kind === 'internal'
-}
-
-export function isFileAddress(addr: Address): addr is { kind: 'file'; path: string } {
-  return addr.kind === 'file'
 }

@@ -101,7 +101,7 @@ export async function executeConditionalSkip(
   if (!isInternalAddress(entry.conditionAddr)) {
     throw new ConditionalSkipError(
       `conditional_skip.conditionAddr must be internal (got '${entry.conditionAddr.kind}'). ` +
-      `Use move to copy from literal/public/file first.`
+      `Use move to copy from literal/public first.`
     )
   }
 

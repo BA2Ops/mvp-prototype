@@ -11,8 +11,6 @@
  */
 
 import { describe, test, expect, beforeEach } from 'vitest'
-import * as fs from 'fs/promises'
-import * as path from 'path'
 import {
   resolveAddress,
   writeAddress,
@@ -25,16 +23,13 @@ import {
 import { createMockL2 } from '../../src/mocks/mock-l2.js'
 import { createMockL3 } from '../../src/mocks/mock-l3.js'
 
-const FIXTURES_DIR = 'tests/fixtures/a3'
-
-describe('A3: Address 解析器（双区架构版）', () => {
+describe('A3: Address 解析器（双区架构版，file kind 已移除）', () => {
   let state: ExecutionState
 
-  beforeEach(async () => {
+  beforeEach(() => {
     const { registry: l2 } = createMockL2()
     const l3 = createMockL3([])
     state = createInitialState(l2, l3)
-    await fs.mkdir(FIXTURES_DIR, { recursive: true })
   })
 
   // ============== literal ==============
@@ -156,58 +151,6 @@ describe('A3: Address 解析器（双区架构版）', () => {
     })
   })
 
-  // ============== file ==============
-  describe('file', () => {
-    test('resolve 从 fs 读取', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'read.txt')
-      await fs.writeFile(filePath, 'file content')
-
-      const result = await resolveAddress(
-        { kind: 'file', path: filePath },
-        state
-      )
-      expect(result).toBe('file content')
-    })
-
-    test('不存在的 file 抛 AddressError', async () => {
-      await expect(
-        resolveAddress({ kind: 'file', path: '/nonexistent-12345.txt' }, state)
-      ).rejects.toThrow(AddressError)
-    })
-
-    test('write 写入文件', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'output.txt')
-      await writeAddress(
-        { kind: 'file', path: filePath },
-        'written content',
-        state
-      )
-      const content = await fs.readFile(filePath, 'utf-8')
-      expect(content).toBe('written content')
-    })
-
-    test('write 不可写路径抛 AddressError', async () => {
-      // 尝试写入不存在的目录下的文件
-      const badPath = '/nonexistent-dir-12345/output.txt'
-
-      await expect(
-        writeAddress(
-          { kind: 'file', path: badPath },
-          'content',
-          state
-        )
-      ).rejects.toThrow(AddressError)
-
-      await expect(
-        writeAddress(
-          { kind: 'file', path: badPath },
-          'content',
-          state
-        )
-      ).rejects.toThrow(/Failed to write file/)
-    })
-  })
-
   // ============== 集成（move 模式）==============
   describe('resolve + writeAddress 集成（move 模式）', () => {
     test('literal → internal', async () => {
@@ -254,35 +197,41 @@ describe('A3: Address 解析器（双区架构版）', () => {
 
       expect(state.publicStore.get('output')).toBe('result')
     })
+  })
 
-    test('file → internal → public（完整数据流）', async () => {
-      const filePath = path.join(FIXTURES_DIR, 'data.txt')
-      await fs.writeFile(filePath, 'flow data')
+  // ============== 穷举守卫（运行时超出类型契约的 kind）==============
+describe('非合法 kind 的运行时硬错误守卫', () => {
+    const legacyFileAddr: Address = { kind: 'file' as any, path: '/tmp/x.txt' }
 
-      // file → internal
-      const v1 = await resolveAddress(
-        { kind: 'file', path: filePath },
-        state
-      )
-      await writeAddress(
-        { kind: 'internal', name: '$r0' },
-        v1,
-        state
-      )
+    test('resolveAddress：遗留 file kind → UNSUPPORTED_KIND', async () => {
+      await expect(resolveAddress(legacyFileAddr, state)).rejects.toMatchObject({
+        name: 'AddressError',
+        code: 'UNSUPPORTED_KIND'
+      })
+    })
 
-      // internal → public
-      const v2 = await resolveAddress(
-        { kind: 'internal', name: '$r0' },
-        state
-      )
-      await writeAddress(
-        { kind: 'public', name: 'final_output' },
-        v2,
-        state
-      )
+    test('writeAddress：遗留 file kind → UNSUPPORTED_KIND', async () => {
+      await expect(writeAddress(legacyFileAddr, 'v', state)).rejects.toMatchObject({
+        name: 'AddressError',
+        code: 'UNSUPPORTED_KIND'
+      })
+    })
 
-      expect(state.internalStore.get('$r0')).toBe('flow data')
-      expect(state.publicStore.get('final_output')).toBe('flow data')
+    test('未知 kind 字符串同样被拦截，不会静默返回 undefined / 无副作用通过', async () => {
+      const bogusAddr = { kind: 'bogus-kind', foo: 1 } as unknown as Address
+      let resolveReturnedUndefinedSilently = false
+      try {
+        const result = await resolveAddress(bogusAddr, state)
+        if (result === undefined) resolveReturnedUndefinedSilently = true
+      } catch {
+        // 期望在这里抛错而不是走到下面两行
+        resolveReturnedUndefinedSilently = false
+      }
+      expect(resolveReturnedUndefinedSilently).toBe(false)
+
+      const beforeSize = state.publicStore.size
+      await writeAddress(bogusAddr, 'v', state).catch(() => {})
+      expect(state.publicStore.size).toBe(beforeSize) // 未命中任何 case 分支前不产生写入副作用
     })
   })
 })

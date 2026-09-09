@@ -1,19 +1,17 @@
 /**
- * Phase A Tier A1d - Address 类型守卫测试
+ * Phase A Tier A1d - Address 类型守卫测试（file kind 已移除，对应 isFileAddress guard 一并删除）
  *
  * 验证：
  * 1. isLiteralAddress
  * 2. isPublicAddress
  * 3. isInternalAddress
- * 4. isFileAddress
  */
 
 import { describe, test, expect } from 'vitest'
 import {
   isLiteralAddress,
   isPublicAddress,
-  isInternalAddress,
-  isFileAddress
+  isInternalAddress
 } from '../../src/l1/types.js'
 import type { Address } from '../../src/l1/types.js'
 
@@ -34,11 +32,6 @@ describe('A1d: Address 类型守卫', () => {
     { kind: 'internal', name: '$r_err' }
   ]
 
-  const files: Address[] = [
-    { kind: 'file', path: '/tmp/a.txt' },
-    { kind: 'file', path: './relative' }
-  ]
-
   // ============== isLiteralAddress ==============
   describe('isLiteralAddress', () => {
     test('literal 返回 true', () => {
@@ -48,7 +41,7 @@ describe('A1d: Address 类型守卫', () => {
     })
 
     test('非 literal 返回 false', () => {
-      for (const addr of [...publics, ...internals, ...files]) {
+      for (const addr of [...publics, ...internals]) {
         expect(isLiteralAddress(addr)).toBe(false)
       }
     })
@@ -71,7 +64,7 @@ describe('A1d: Address 类型守卫', () => {
     })
 
     test('非 public 返回 false', () => {
-      for (const addr of [...literals, ...internals, ...files]) {
+      for (const addr of [...literals, ...internals]) {
         expect(isPublicAddress(addr)).toBe(false)
       }
     })
@@ -86,7 +79,7 @@ describe('A1d: Address 类型守卫', () => {
     })
 
     test('非 internal 返回 false', () => {
-      for (const addr of [...literals, ...publics, ...files]) {
+      for (const addr of [...literals, ...publics]) {
         expect(isInternalAddress(addr)).toBe(false)
       }
     })
@@ -97,31 +90,15 @@ describe('A1d: Address 类型守卫', () => {
     })
   })
 
-  // ============== isFileAddress ==============
-  describe('isFileAddress', () => {
-    test('file 返回 true', () => {
-      for (const addr of files) {
-        expect(isFileAddress(addr)).toBe(true)
-      }
-    })
-
-    test('非 file 返回 false', () => {
-      for (const addr of [...literals, ...publics, ...internals]) {
-        expect(isFileAddress(addr)).toBe(false)
-      }
-    })
-  })
-
   // ============== 互斥性 ==============
   describe('互斥性', () => {
     test('每个 Address 恰好匹配一个 type guard', () => {
-      const allAddrs: Address[] = [...literals, ...publics, ...internals, ...files]
+      const allAddrs: Address[] = [...literals, ...publics, ...internals]
       for (const addr of allAddrs) {
         const matches = [
           isLiteralAddress(addr),
           isPublicAddress(addr),
-          isInternalAddress(addr),
-          isFileAddress(addr)
+          isInternalAddress(addr)
         ].filter(Boolean).length
 
         expect(matches).toBe(1)

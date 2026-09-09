@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. Value 类型
- * 2. Address 4 种 kind：literal / public / internal / file
+ * 2. Address 3 种 kind：literal / public / internal（原 file kind 已移除）
  * 3. 5 种 StackEntry 可实例化
  * 4. Discriminated union 类型缩窄
  * 5. BaseEntry 共有字段
@@ -35,8 +35,8 @@ describe('A1: Type 定义层（双区架构版）', () => {
     })
   })
 
-  // ============== Address 4 kinds ==============
-  describe('Address 4 种 kind', () => {
+  // ============== Address 3 kinds（原 file kind 已移除）==============
+  describe('Address 3 种 kind', () => {
     test('literal', () => {
       const addr: Address = { kind: 'literal', value: 'hello' }
       expect(addr.kind).toBe('literal')
@@ -54,19 +54,13 @@ describe('A1: Type 定义层（双区架构版）', () => {
       expect(isInternalAddress(addr)).toBe(true)
     })
 
-    test('file', () => {
-      const addr: Address = { kind: 'file', path: '/tmp/test.txt' }
-      expect(addr.kind).toBe('file')
-    })
-
-    test('所有 4 种都是 Address 合法实例', () => {
+    test('所有 3 种都是 Address 合法实例', () => {
       const addrs: Address[] = [
         { kind: 'literal', value: 42 },
         { kind: 'public', name: 'business_var' },
-        { kind: 'internal', name: '$r0' },
-        { kind: 'file', path: '/tmp/x' }
+        { kind: 'internal', name: '$r0' }
       ]
-      expect(addrs).toHaveLength(4)
+      expect(addrs).toHaveLength(3)
     })
 
     test('internal name 通常以 $r 开头（约定）', () => {
