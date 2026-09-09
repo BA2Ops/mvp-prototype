@@ -116,7 +116,9 @@ describe('CE5: pipeline.collect 去 PRIMARY_OUTPUT 硬编码 (T-2.4)', () => {
     })
 
     it('run_shell → primary = stdout', async () => {
-      const p = await mkPipeline(dir).say('运行命令 echo T-2.4-success')
+      // 跨平台：用 node -e 代替 echo（echo 在 Windows 上是 cmd 内置命令，
+      // execFile 无 shell 解释器会 ENOENT；与 tier-b03 的跨平台约定一致）
+      const p = await mkPipeline(dir).say('运行命令 node -e console.log("T-2.4-success")')
       expect(typeof p.primary).toBe('string')
       expect(p.primary).toContain('T-2.4-success')
     })
