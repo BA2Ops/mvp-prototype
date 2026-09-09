@@ -85,6 +85,8 @@ PlantUML 文件 ←── 转换工具（本模块；人类阅读/评审/文档�
 
 寄存器名（$r_*）、evaluate_expr AST、conditional_skip/skip_n 跳转计数、
 错误码判断逻辑、输入绑定 move——这些由 XML→L3 编译模块推导生成。
+节点输出 `as` 字段保留寄存器名(op 输出→寄存器映射,供 move 指令使用);
+输出绑定 `outputBindings` 用 `fromNode`(节点输出引用)代替直接引用寄存器名。
 
 ### 3.3 表达自由度（特性，非缺陷；⚠️ 当前受限于受限子集）
 

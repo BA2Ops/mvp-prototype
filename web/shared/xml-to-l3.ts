@@ -105,7 +105,7 @@ function buildOutputMap(exp: XmlExperience): Map<string, string> {
     if (node.kind === 'condition') continue
 
     for (const output of node.outputs) {
-      // 输出绑定:output.name → output.as(业务变量名)
+      // 输出绑定:output.name → output.as(寄存器名)
       const key = `${node.id}.${output.name}`
       map.set(key, output.as)
     }
@@ -331,14 +331,29 @@ function compileTargetOp(
  * 将 XML 输出绑定编译为 L3 OutputBinding
  */
 function compileOutputBindings(
-  bindings: XmlOutputBinding[]
+  bindings: XmlOutputBinding[],
+  exp: XmlExperience
 ): Record<string, OutputBinding> | undefined {
   if (bindings.length === 0) return undefined
 
   const result: Record<string, OutputBinding> = {}
   for (const b of bindings) {
+    // 解析 fromNode: "nodeId.outputName" → 查找节点的 output.as(寄存器名)
+    const dot = b.fromNode.indexOf('.')
+    const nodeId = dot >= 0 ? b.fromNode.substring(0, dot) : b.fromNode
+    const outputName = dot >= 0 ? b.fromNode.substring(dot + 1) : ''
+
+    const node = exp.nodes.find(n => n.id === nodeId)
+    let register = b.fromNode // fallback
+    if (node && (node.kind === 'op' || node.kind === 'experience')) {
+      const output = node.outputs.find(o => o.name === outputName)
+      if (output) {
+        register = output.as // 寄存器名来自节点输出的 as 值
+      }
+    }
+
     result[b.name] = {
-      register: b.register,
+      register,
       type: b.type,
       persist: b.persist,
       description: undefined
@@ -386,7 +401,7 @@ export function compileXmlToL3(xmlExp: XmlExperience): Experience {
 
   const targetOp = compileTargetOp(xmlExp, targetNodes, outputMap)
 
-  const outputsBindings = compileOutputBindings(xmlExp.outputBindings)
+  const outputsBindings = compileOutputBindings(xmlExp.outputBindings, xmlExp)
   const responses = compileFailureMessages(xmlExp)
 
   // 输入参数 schema

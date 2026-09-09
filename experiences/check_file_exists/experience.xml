@@ -1,4 +1,4 @@
-<experience id="check_file_exists" description="判断文件是否存在(可读)。返回 exists 布尔值,不抛出。" handleError>
+﻿<experience id="check_file_exists" description="判断文件是否存在(可读)。返回 exists 布尔值,不抛出。" handleError>
   <inputs>
     <param name="path" type="path" required=""/>
   </inputs>
@@ -33,7 +33,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="exists" register="$r_exists" type="boolean" persist=""/>
+    <binding name="exists" fromNode="calc_exists.result" type="boolean" persist=""/>
   </outputBindings>
   <metadata category="file-io" sideEffects="read-only" version="1.0.0">
     <tags>

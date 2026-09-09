@@ -95,7 +95,7 @@ export default function IoParamsPanel({ xmlExp }: Props) {
             <thead>
               <tr className="border-b border-gray-200 text-gray-500">
                 <th className="text-left py-1 pr-2">输出名</th>
-                <th className="text-left py-1 pr-2">寄存器</th>
+                <th className="text-left py-1 pr-2">来源节点输出</th>
                 <th className="text-left py-1 pr-2">类型</th>
                 <th className="text-left py-1">持久化</th>
               </tr>
@@ -104,7 +104,7 @@ export default function IoParamsPanel({ xmlExp }: Props) {
               {xmlExp.outputBindings.map((b, i) => (
                 <tr key={i} className="border-b border-gray-100">
                   <td className="py-1 pr-2 font-mono text-purple-700">{b.name}</td>
-                  <td className="py-1 pr-2 font-mono text-gray-700">{b.register}</td>
+                  <td className="py-1 pr-2 font-mono text-gray-700">{b.fromNode}</td>
                   <td className="py-1 pr-2 text-gray-600">{b.type}</td>
                   <td className="py-1">
                     {b.persist

@@ -1,4 +1,4 @@
-<experience id="write_file" description="把内容写入文件(覆盖)。">
+﻿<experience id="write_file" description="把内容写入文件(覆盖)。">
   <inputs>
     <param name="path" type="path" required=""/>
     <param name="content" type="string" required=""/>
@@ -26,7 +26,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="bytes_written" register="$r_bytes" type="number" persist=""/>
+    <binding name="bytes_written" fromNode="write.bytes_written" type="number" persist=""/>
   </outputBindings>
   <failureMessages>
     <message code="*" message="写入 {path} 失败:{err.message}"/>

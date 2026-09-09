@@ -1,4 +1,4 @@
-<experience id="read_file_with_default" description="读取文件内容;文件不存在(ENOENT)时返回默认内容。意外异常也在此截获。" handleError>
+﻿<experience id="read_file_with_default" description="读取文件内容;文件不存在(ENOENT)时返回默认内容。意外异常也在此截获。" handleError>
   <inputs>
     <param name="path" type="path" required=""/>
     <param name="default_content" type="string" required=""/>
@@ -36,7 +36,7 @@
     <path id="normal" description="读取成功 → content 已在 $r_content" response="已读取 {path} 的内容"/>
   </paths>
   <outputBindings>
-    <binding name="content" register="$r_content" type="string" persist=""/>
+    <binding name="content" fromNode="try_read.content" type="string" persist=""/>
   </outputBindings>
   <metadata category="file-io" sideEffects="read-only" version="1.0.0">
     <tags>

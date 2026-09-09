@@ -1,4 +1,4 @@
-<experience id="replace_in_file" description="读取文件、替换内容、写回(文件编辑 MVP)。" handleError>
+﻿<experience id="replace_in_file" description="读取文件、替换内容、写回(文件编辑 MVP)。" handleError>
   <inputs>
     <param name="path" type="path" required=""/>
     <param name="find" type="string" required=""/>
@@ -51,7 +51,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="count" register="$r_count" type="number" persist=""/>
+    <binding name="count" fromNode="replace.count" type="number" persist=""/>
   </outputBindings>
   <failureMessages>
     <message code="ENOENT" message="替换失败:文件 {path} 不存在"/>

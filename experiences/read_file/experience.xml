@@ -1,4 +1,4 @@
-<experience id="read_file" description="读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。">
+﻿<experience id="read_file" description="读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。">
   <inputs>
     <param name="path" type="path" required=""/>
   </inputs>
@@ -24,7 +24,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="content" register="$r_content" type="string" persist=""/>
+    <binding name="content" fromNode="read.content" type="string" persist=""/>
   </outputBindings>
   <failureMessages>
     <message code="ENOENT" message="读取失败:文件 {path} 不存在"/>

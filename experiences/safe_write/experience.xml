@@ -1,4 +1,4 @@
-<experience id="safe_write" description="安全写入:目标文件已存在时跳过(不覆盖),否则写入。" handleError>
+﻿<experience id="safe_write" description="安全写入:目标文件已存在时跳过(不覆盖),否则写入。" handleError>
   <inputs>
     <param name="path" type="path" required=""/>
     <param name="content" type="string" required=""/>
@@ -50,7 +50,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="bytes_written" register="$r_bytes" type="number" persist=""/>
+    <binding name="bytes_written" fromNode="do_write.bytes_written" type="number" persist=""/>
   </outputBindings>
   <metadata category="file-io" sideEffects="fs-write" version="1.0.0">
     <tags>

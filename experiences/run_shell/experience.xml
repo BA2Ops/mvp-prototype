@@ -1,4 +1,4 @@
-<experience id="run_shell" description="执行外部命令(execFile 语义),返回 stdout/stderr/exit_code。">
+﻿<experience id="run_shell" description="执行外部命令(execFile 语义),返回 stdout/stderr/exit_code。">
   <inputs>
     <param name="command" type="string" required=""/>
     <param name="args" type="object" default=""/>
@@ -29,7 +29,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="stdout" register="$r_stdout" type="string" persist=""/>
+    <binding name="stdout" fromNode="exec.stdout" type="string" persist=""/>
   </outputBindings>
   <metadata category="shell" sideEffects="exec" version="1.0.0">
     <tags>

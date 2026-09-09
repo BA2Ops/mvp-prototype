@@ -45,7 +45,7 @@ export const readFileXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'content', register: '$r_content', type: 'string', persist: true }
+    { name: 'content', fromNode: 'read.content', type: 'string', persist: true }
   ],
   failureMessages: [
     { code: 'ENOENT', message: '读取失败:文件 {path} 不存在' },
@@ -118,7 +118,7 @@ export const readFileWithDefaultXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'content', register: '$r_content', type: 'string', persist: true }
+    { name: 'content', fromNode: 'try_read.content', type: 'string', persist: true }
   ],
   failureMessages: [],
   handleError: true,
@@ -172,7 +172,7 @@ export const checkFileExistsXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'exists', register: '$r_exists', type: 'boolean', persist: true }
+    { name: 'exists', fromNode: 'calc_exists.result', type: 'boolean', persist: true }
   ],
   failureMessages: [],
   handleError: true,
@@ -216,7 +216,7 @@ export const writeFileXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'bytes_written', register: '$r_bytes', type: 'number', persist: true }
+    { name: 'bytes_written', fromNode: 'write.bytes_written', type: 'number', persist: true }
   ],
   failureMessages: [
     { code: '*', message: '写入 {path} 失败:{err.message}' }
@@ -300,7 +300,7 @@ export const safeWriteXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'bytes_written', register: '$r_bytes', type: 'number', persist: true }
+    { name: 'bytes_written', fromNode: 'do_write.bytes_written', type: 'number', persist: true }
   ],
   failureMessages: [],
   handleError: true,
@@ -346,7 +346,7 @@ export const findFilesXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'matches', register: '$r_matches', type: 'object', persist: true }
+    { name: 'matches', fromNode: 'glob.matches', type: 'object', persist: true }
   ],
   failureMessages: [],
   handleError: false,
@@ -392,7 +392,7 @@ export const searchInFilesXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'matches', register: '$r_matches', type: 'object', persist: true }
+    { name: 'matches', fromNode: 'grep.matches', type: 'object', persist: true }
   ],
   failureMessages: [],
   handleError: false,
@@ -439,7 +439,7 @@ export const runShellXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'stdout', register: '$r_stdout', type: 'string', persist: true }
+    { name: 'stdout', fromNode: 'exec.stdout', type: 'string', persist: true }
   ],
   failureMessages: [],
   handleError: false,
@@ -516,7 +516,7 @@ export const replaceInFileXml: XmlExperience = {
     }
   ],
   outputBindings: [
-    { name: 'count', register: '$r_count', type: 'number', persist: true }
+    { name: 'count', fromNode: 'replace.count', type: 'number', persist: true }
   ],
   failureMessages: [
     { code: 'ENOENT', message: '替换失败:文件 {path} 不存在' },

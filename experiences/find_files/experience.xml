@@ -1,4 +1,4 @@
-<experience id="find_files" description="按 glob 模式查找文件,返回路径列表。">
+﻿<experience id="find_files" description="按 glob 模式查找文件,返回路径列表。">
   <inputs>
     <param name="pattern" type="string" required=""/>
     <param name="cwd" type="path" default="."/>
@@ -28,7 +28,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="matches" register="$r_matches" type="object" persist=""/>
+    <binding name="matches" fromNode="glob.matches" type="object" persist=""/>
   </outputBindings>
   <metadata category="search" sideEffects="read-only" version="1.0.0">
     <tags>

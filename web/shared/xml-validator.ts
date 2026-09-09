@@ -371,7 +371,7 @@ function checkR6(graph: NodeGraph, exp: XmlExperience): ValidationError[] {
       continue
     }
 
-    // 检查 varName 是否来自某个节点的输出
+    // 检查 varName 是否来自某个节点的输出(as 字段,寄存器名)
     let foundSource = false
     for (const [, n] of graph.nodes) {
       if (n.kind === 'condition') continue

@@ -1,4 +1,4 @@
-<experience id="search_in_files" description="在文件/目录中搜索内容(字面量或正则),返回匹配列表。">
+﻿<experience id="search_in_files" description="在文件/目录中搜索内容(字面量或正则),返回匹配列表。">
   <inputs>
     <param name="pattern" type="string" required=""/>
     <param name="path" type="path" required=""/>
@@ -28,7 +28,7 @@
     </path>
   </paths>
   <outputBindings>
-    <binding name="matches" register="$r_matches" type="object" persist=""/>
+    <binding name="matches" fromNode="grep.matches" type="object" persist=""/>
   </outputBindings>
   <metadata category="search" sideEffects="read-only" version="1.0.0">
     <tags>

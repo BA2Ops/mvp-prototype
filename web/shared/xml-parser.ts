@@ -293,7 +293,7 @@ function transformParsedXml(raw: Record<string, unknown>): Record<string, unknow
   if (rawBindings?.binding) {
     result.outputBindings = asArray(rawBindings.binding as Record<string, unknown>).map((b: Record<string, unknown>) => ({
       name: String(b.name ?? ''),
-      register: String(b.register ?? ''),
+      fromNode: String(b.fromNode ?? ''),
       type: String(b.type ?? 'string'),
       persist: xmlBool(b.persist)
     }))
@@ -409,7 +409,7 @@ function experienceToXmlObject(exp: XmlExperience): Record<string, unknown> {
     expObj.outputBindings = {
       binding: exp.outputBindings.map(b => ({
         name: b.name,
-        register: b.register,
+        fromNode: b.fromNode,
         type: b.type,
         persist: b.persist ? '' : undefined
       }))
