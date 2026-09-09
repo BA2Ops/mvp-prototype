@@ -29,8 +29,10 @@ export const LITERAL_POOL_SIZE = 8
 export const JUDGE_COND_POOL_SIZE = 10
 
 /** FrameScope 嵌套深度软限 = 与 A11 RecursionDepthError 并列检查
- *  真实业务递归经验(retry-until-success)通常 ≤5 轮,8 足够 */
-export const MAX_ACTIVE_SCOPES = 8
+ *  P4/T-4.3: 从 8 提到 1024（匹配 DEFAULT_MAX_RECURSION_DEPTH=1000 + 余量），
+ *  允许 counter 等递归经验深度嵌套。
+ *  U_max 随之调整为线性上限公式（见下方 U_MAX_P1_ESTIMATE 注释）。 */
+export const MAX_ACTIVE_SCOPES = 1024
 
 /** Global functional registers 枚举 (C4)
  *  现状 {$err,$path} = 2 枚;预留空位 ≤ 6 (N6 冻结线)
@@ -50,8 +52,15 @@ export const LEGACY_ERROR_REGISTER = '$r_err' as const
 /** 旧路径标记寄存器名 (transition alias, P4 删除) */
 export const LEGACY_PATH_REGISTER = '$r_path' as const
 
-// ============== U_max 估算 (P0/T-0.1 实证修订) ==============
+// ============== U_max 估算 (P0/T-0.1 实证修订 + P4/T-4.3 调整) ==============
 // 来源:doc 19 K3 + scripts/dump-formal-spec.ts 修正(M_max 4→5 后的重算)
+//
+// P4/T-4.3 调整:
+// - MAX_ACTIVE_SCOPES 从 8 提到 1024，U_max 线性上限随之增大。
+// - 但 P4 实测峰值(全量 e2e + demos)仅 12，远低于估算。
+// - $r_* 全局寄存器在 new path 下不 scope-prefix（T-4.3 改动），
+//   formalSpec outputs 仍走 slotIndex scope-prefixing。
+// - 以下估算保留为理论上限；实测峰值 12 已记录在 doc 19 N4。
 //
 // 公式:
 //   U_max = GlobalRegs(2)
@@ -59,9 +68,9 @@ export const LEGACY_PATH_REGISTER = '$r_path' as const
 //         + JudgeCondPool(JUDGE_COND_POOL_SIZE)
 //         + inSlots(M_MAX × MAX_ACTIVE_SCOPES)
 //         + outSlots(P_MAX × MAX_ACTIVE_SCOPES)
-//         = 2 + 8 + 10 + 5×8 + 3×8 = 84
+//         = 2 + 8 + 10 + 5×1024 + 3×1024 = 8202
 //
-// ⚠️ 这是估算值,P4 实测固化后替换;doc 19 N4 冻结线
+// ⚠️ 这是理论上限,P4 实测峰值=12（远低于此）；doc 19 N4 冻结线
 export const U_MAX_P1_ESTIMATE = 2 + LITERAL_POOL_SIZE + JUDGE_COND_POOL_SIZE
                               + M_MAX * MAX_ACTIVE_SCOPES
                               + P_MAX * MAX_ACTIVE_SCOPES

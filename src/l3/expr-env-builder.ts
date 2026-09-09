@@ -121,11 +121,11 @@ export function resolveVar(
   outputsByName: Map<string, FormalParam>,
   inputNames: Set<string>
 ): VarResolution {
-  // 1. global functional
-  if (name === '$err' || name === '$r_err' || name === '$path' || name === '$r_path') {
-    if (name === '$err' || name === '$r_err') {
-      return { resolved: true, registerName: GLOBAL_ERR, reason: 'global' }
-    }
+  // 1. global functional — P4/T-4.3: $r_err/$r_path 解析为 canonical $err/$path
+  if (name === '$err' || name === '$r_err') {
+    return { resolved: true, registerName: GLOBAL_ERR, reason: 'global' }
+  }
+  if (name === '$path' || name === '$r_path') {
     return { resolved: true, registerName: '$path', reason: 'global' }
   }
   // 2. input ($r_input_<name>)
@@ -139,39 +139,17 @@ export function resolveVar(
   //    可能与 op formalSpec.outputs[businessName] 的 businessName 不同
   //    (e.g. experience 用 '$r_bytes',op spec 用 'bytes_written')。
   //    索引策略: outputsByName 同时索引 [aliasName, businessName]
+  //    P4/T-4.3: $r_* 名在 new path 下保持全局（与 expandRefs 一致），
+  //    不再 scope-prefix。formalSpec outputs 仍通过 slotIndex scope-prefix，
+  //    但当 ParamRef.name 是 $r_* 时，用原名。
   const legacyMatch = name.match(/^\$r_(.+)$/)
   if (legacyMatch) {
     const aliasName = legacyMatch[1]
     if (aliasName === 'err') {
-      return { resolved: true, registerName: GLOBAL_ERR, reason: 'slot' }
+      return { resolved: true, registerName: GLOBAL_ERR, reason: 'global' }
     }
-    // 优先查 aliasName;若没有,查常见业务名 (content/exists/bytes_written/probe 等)
-    let fp = outputsByName.get(aliasName)
-    if (!fp) {
-      // 尝试常见别名
-      const aliases: Record<string, string> = {
-        'bytes': 'bytes_written',
-        'count': 'count',
-        'exists': 'exists',
-        'probe': 'probe',
-        'replaced': 'replaced'
-      }
-      const realBusinessName = aliases[aliasName]
-      if (realBusinessName) fp = outputsByName.get(realBusinessName)
-    }
-    if (fp) {
-      if (fp.slotIndex === 99) {
-        return { resolved: true, registerName: GLOBAL_ERR, reason: 'slot' }
-      }
-      if (scopeId) {
-        return {
-          resolved: true,
-          registerName: `$S${scopeId}.out${fp.slotIndex}`,
-          reason: 'slot'
-        }
-      }
-      return { resolved: true, registerName: name, reason: 'literal-name' }
-    }
+    // P4/T-4.3: $r_* 名 → 全局寄存器（原名），不 scope-prefix
+    return { resolved: true, registerName: name, reason: 'literal-name' }
   }
   // 4. fallback: var.name == register name (legacy 兼容)
   return { resolved: false, registerName: name, reason: 'fallback' }

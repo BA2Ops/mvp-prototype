@@ -128,15 +128,15 @@ describe('CC3: evaluate_expr env map (T-1.6)', () => {
       expect(r.registerName).toBe('$r_input_path')
     })
 
-    it('c) step output $r_content → $S<scope>.out<slotIndex>', () => {
+    it('c) step output $r_content → 全局原名 (P4/T-4.3: $r_* 全局化)', () => {
       const r = resolveVar('$r_content', 's0', outputsByName, inputNames)
-      expect(r.reason).toBe('slot')
-      expect(r.registerName).toBe('$Ss0.out2')
+      expect(r.reason).toBe('literal-name')
+      expect(r.registerName).toBe('$r_content')
     })
 
-    it('d) 未知 var → fallback (原名)', () => {
+    it('d) 未知 var → 全局原名 (P4/T-4.3: $r_* 全局化，不再 fallback)', () => {
       const r = resolveVar('$r_unknown_thing', 's0', outputsByName, inputNames)
-      expect(r.reason).toBe('fallback')
+      expect(r.reason).toBe('literal-name')
       expect(r.registerName).toBe('$r_unknown_thing')
     })
 
@@ -176,7 +176,7 @@ describe('CC3: evaluate_expr env map (T-1.6)', () => {
         new Set(['path', 'content'])
       )
       expect(env['$r_err']).toBe(GLOBAL_ERR)
-      expect(env['$r_bytes']).toBe('$Ss0.out4')
+      expect(env['$r_bytes']).toBe('$r_bytes')  // P4/T-4.3: $r_* 全局化
     })
   })
 
@@ -281,8 +281,8 @@ describe('CC3: evaluate_expr env map (T-1.6)', () => {
       }
     })
 
-    it('legacy path 对照: 同一 safe_write, 行为应一致', async () => {
-      disableCrrNewPath()
+    it('P4/T-4.3: new path (legacy 已删除) safe_write 行为一致', async () => {
+      // P4/T-4.3: disableCrrNewPath() 是 no-op，new path 是唯一路径
       const state = createInitialState(mkRegistry(), mkService())
       await l1MainLoop(
         { type: 'safe_write', params: { path: join(dir, 'legacy.txt'), content: 'legacy path' } },
@@ -291,11 +291,11 @@ describe('CC3: evaluate_expr env map (T-1.6)', () => {
       )
       const content = await fs.readFile(join(dir, 'legacy.txt'), 'utf-8')
       expect(content).toBe('legacy path')
-      // legacy 应写 \$r_err (而非 \$err)
+      // new path 写 $err (GLOBAL_ERR)
       const errKeys = Array.from(state.internalStore.keys()).filter(k => k.includes('err'))
       expect(errKeys.length).toBeGreaterThan(0)
-      // path mark 写入 \$r_path
-      expect(state.internalStore.has('$r_path')).toBe(true)
+      // path mark 写入 $path (GLOBAL_PATH)
+      expect(state.internalStore.has('$path')).toBe(true)
     })
   })
 })

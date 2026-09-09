@@ -40,10 +40,14 @@ export class ExperienceService implements L3Service {
     state: ExecutionState,
     options?: CompileOptions
   ): Promise<StackEntry[]> {
+    // P4/T-4.3: 合并 defaultOptions (含 skip_cost) 与调用方 options (含 useFixedSlotConvention)
+    // 之前 `options ?? this.defaultOptions` 会导致调用方 options 覆盖 defaultOptions，
+    // 丢失 skip_cost 等服务级配置。
+    const merged: CompileOptions = { ...this.defaultOptions, ...options }
     return Promise.resolve(
       compileExperience(
         intent, state, this.experiences, this.registry,
-        options ?? this.defaultOptions
+        merged
       )
     )
   }

@@ -133,8 +133,8 @@ describe('CC4: outputs_bindings post-bindings (T-2.2+T-2.3)', () => {
         expect(publicMoves.length).toBe(1)
         const m = publicMoves[0] as any
         expect(m.to.name).toBe('safe_write.bytes_written')
-        // bytes_written slotIndex = 4, 应翻译为 $S<scope>.out4
-        expect(m.from.name).toMatch(/^\$S\w+\.out4$/)
+        // P4/T-4.3: $r_bytes 全局化，binding.register 保持原名 $r_bytes（不再 scope-prefix）
+        expect(m.from.name).toBe('$r_bytes')
       } finally {
         disableCrrNewPath()
       }

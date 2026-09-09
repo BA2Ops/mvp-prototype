@@ -42,33 +42,24 @@ import { executeConditionalSkip } from './primitives/conditional-skip.js'
 /**
  * CRR new path 总开关。
  *
- * 默认 false (legacy 路径运行,与原样逻辑兼容)。
- * 测试代码可通过 enableCrrNewPath() / disableCrrNewPath() 在测试内打开/关闭。
- *
- * 启用后:
- * - main-loop.processIntentEntry 在 pending 阶段为 IntentEntry 分配 FrameScopeAllocator scopeId
- * - await children 完成后 exitScope
- * - bubbleError abortFrame 路径同步 exitScope (R-1🔴高对称点)
- *
- * 设计依据: 19c-implementation-plan.md §三 T-1.5
- * 未来 P2+ 接入 service options / frame-level metadata 替代全局开关。
+ * P4/T-4.3: legacy mode 已删除，new path 是唯一路径。
+ * 以下函数保留为 no-op 以兼容现有测试代码的 enableCrrNewPath()/disableCrrNewPath() 调用，
+ * 后续测试清理完成后可移除。
  */
-let _crrNewPathEnabled = false
-
 export function isCrrNewPathEnabled(): boolean {
-  return _crrNewPathEnabled
+  return true
 }
 
 export function enableCrrNewPath(): void {
-  _crrNewPathEnabled = true
+  // no-op: new path is always enabled (P4/T-4.3)
 }
 
 export function disableCrrNewPath(): void {
-  _crrNewPathEnabled = false
+  // no-op: new path is always enabled (P4/T-4.3)
 }
 
 function crrNewPathEnabled(): boolean {
-  return _crrNewPathEnabled
+  return true
 }
 
 /**

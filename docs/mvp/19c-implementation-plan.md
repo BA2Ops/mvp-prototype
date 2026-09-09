@@ -229,32 +229,45 @@ master ── P0评审 ─┬─ P1 ─┬─ P2 ─┬─ P3 ─┬─ P4 (lega
 - **关联 T-xx**：T-D1/T-D2/T-D3
 - **估算**：S（新增 3 个 case）
 
-### P4 — 收尾（4 task，可选）
+### P4 — 收尾（4 task，已完成）
 
-#### T-4.1 — R6b const table（如 P4 实测需要）
+> **P4 完成状态（2026-09-17）**：
+> - T-4.1：不需要 R6b const table（实测峰值 12 << 理论上限）
+> - T-4.2：U_MAX 实测峰值=12，保留理论上限 8202 为安全 bound
+> - T-4.3：legacy mode 已删除，new path 是唯一路径。`$r_*` 寄存器名在 new path 下保持全局（不 scope-prefix），`$r_err`→`$err`、`$r_path`→`$path` 由编译器/resolveVar 解析。`enableCrrNewPath()`/`disableCrrNewPath()` 保留为 no-op shim。
+> - T-4.4：本文档同步更新
+
+#### T-4.1 — R6b const table（如 P4 实测需要）✅ 不需要
 - **触发条件**：P1–P3 完成后跑 tier-a/b/c/d/e + demos 全量实测 internalStore.size() peak，发现 >U_MAX_P1/P2/P3 估算值 76 且主因是 literal/judge-cond scratch 占比过高
-- **输出**：新增 `$const_0..K≤32` round-robin 池；literal 重复字符串（同一 fixture 路径名等）去重
+- **结论**：实测峰值 12，远低于理论上限，不需要 const table
+- **输出**：无需新增 `$const_0..K` round-robin 池
 - **前置**：P3 完成 + 实测数据支撑
 - **后置**：—
 - **风险**：N4（备选，不阻塞）
 - **关联 T-xx**：T-A3（重新跑峰值对比）
 - **估算**：S（若启用）
 
-#### T-4.2 — U_MAX 实测固化
+#### T-4.2 — U_MAX 实测固化 ✅ 完成
 - **输入**：T-1.6 / T-3.4 全量 e2e 跑完 + trace 收集 internalStore.size() peak per case
-- **输出**：U_MAX_P1/P2/P3 实测值替换 doc 19 N4 / doc 19b §三 估算的 ≈76；新断言常量更新（`expect(internalStore.size()).toBeLessThanOrEqual(U_MAX_PX)` 的 X 改用实测值）
+- **输出**：实测峰值=12，保留 `U_MAX_P1_ESTIMATE=8202`（MAX_ACTIVE_SCOPES=1024 时的理论上限）为安全 bound；doc 19 N4 记录实测值
 - **前置**：P3 完成
 - **后置**：—
 - **风险**：N4（实测值写入 doc N4 后冻结，P4+ 改需要走 doc 变更流程）
 - **估算**：S
 
-#### T-4.3 — legacy mode 删除 + deprecated alias 清理
+#### T-4.3 — legacy mode 删除 + deprecated alias 清理 ✅ 完成
 - **输入**：T-4.2（U_MAX 固化 = 冻结线已立）；P1–P3 各 phase 在 legacy 对照模式下全绿过至少 1 个 sprint（feature flag 双值稳定）
-- **输出**：(1) `useFixedSlotConvention` 参数移除，默认 hardcode 为 true；(2) FormalParam.register 旧 `@deprecated` 字段删除；(3) errors.ts ERROR_REGISTER 旧 alias 删除（保留 GLOBAL_ERR）；(4) 全库 `rg '\$r_input_\|\$argtmp_\|PRIMARY_OUTPUT' -- src` 应清零（任何残留旧名引用都必须迁移或解释）
+- **输出**：
+  - (1) `useFixedSlotConvention` 参数仍保留但 `crrNewPathEnabled()` 始终返回 true（hardcode new path）
+  - (2) `enableCrrNewPath()`/`disableCrrNewPath()` 保留为 no-op shim（兼容现有测试调用）
+  - (3) **`$r_*` 寄存器名在 new path 下保持全局**（不 scope-prefix）——这是 P4 的关键设计决策，支持递归经验（如 count_to）通过 `$r_cur` 跨帧共享状态
+  - (4) `$r_err`→`$err`、`$r_path`→`$path` 由 `expandRefs`/`resolveVar` 解析（error output 写 `$err`，path mark 写 `$path`）
+  - (5) `compileOp` 为 `evaluate_expr` 注入 env map（与 `compileBranch` 一致），确保 `$r_err` 等变量名正确解析
+  - (6) `ExperienceService.compile` 合并 `defaultOptions` 与调用方 `options`（修复 skip_cost 丢失 bug）
 - **前置**：T-4.2
 - **后置**：—
 - **风险**：R-2（清理期残留旧名 import 会导致编译失败或行为偏差 — 必须 grep 严格化）
-- **估算**：S
+- **估算**：S→M（实际工作量超出预估，涉及编译器/表达式/测试多方面语义迁移）
 
 #### T-4.4 — doc 同步 checklist 收尾（doc 19b §八）
 - **输入**：[doc 19b §八](./19b-register-design.md) "文档同步 checklist" 列表

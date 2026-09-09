@@ -237,39 +237,22 @@ function compilePostBindings(
 }
 
 /**
- * CRR T-2.2: new path 下 outputs_bindings.register 从 '$r_<X>' 翻译为 '$S<scopeId>.out<k>'
+ * CRR T-2.2: new path 下 outputs_bindings.register 解析
  *
- * 翻译策略:
- *  - 已是 $S<scope>.out<k> 形式: 幂等返回
- *  - 是 '$r_err' / '$err': 返回 GLOBAL_ERR
- *  - 是 '$r_<X>' 形式: 从 outputsByName 索引 X 查到 FormalParam, 返回 $S<scopeId>.out<slotIndex>
- *  - 未知名称: 返回原值 (运行期会 VARIABLE_NOT_FOUND,与 legacy 保持等价诊断信号)
+ * P4/T-4.3: $r_* 名在 new path 下保持全局（与 expandRefs 一致），
+ * 不再 scope-prefix。$r_err → $err。
+ * 已是 $S<scope>.out<k> 形式: 幂等返回。
  */
 function resolveBindingRegisterForNewPath(
   register: string,
-  bindingKey: string,
+  _bindingKey: string,
   ctx: CompileCtx,
-  outputsByName: Map<string, import('../l2/operation.js').FormalParam>
+  _outputsByName: Map<string, import('../l2/operation.js').FormalParam>
 ): string {
   if (!ctx.scopeId) return register
   if (register.startsWith('$S') && register.includes('.out')) return register
   if (register === '$err' || register === '$r_err') return GLOBAL_ERR
-  // 优先按 binding.key (= exp.outputs 的 key = step.outputs 的 key) 反查
-  // 而不是 register 的 $r_<aliasName>。原因: aliasName 可能被多个 step 重名覆写
-  // (如 safe_write abort path 的 evaluate_expr.outputs.result 也用 $r_bytes)
-  const fp = outputsByName.get(bindingKey)
-  if (fp && fp.slotIndex !== 99) {
-    return `$S${ctx.scopeId}.out${fp.slotIndex}`
-  }
-  // fallback: 按 aliasName 查
-  const legacyMatch = register.match(/^\$r_(.+)$/)
-  if (legacyMatch) {
-    const aliasName = legacyMatch[1]
-    const fp2 = outputsByName.get(aliasName)
-    if (fp2 && fp2.slotIndex !== 99) {
-      return `$S${ctx.scopeId}.out${fp2.slotIndex}`
-    }
-  }
+  // P4/T-4.3: $r_* 名 → 全局寄存器（原名），不 scope-prefix
   return register
 }
 
@@ -611,6 +594,29 @@ function expandRefs(
       addrs[name] = { kind: 'internal', name: INPUT_PREFIX + ref.outKey }
     } else if (
       ctx.newPath &&
+      ref.kind === 'register' &&
+      ref.name === '$r_err'
+    ) {
+      // CRR P4/T-4.3: $r_err → $err (GLOBAL_ERR), 与 error output 一致
+      addrs[name] = { kind: 'internal', name: GLOBAL_ERR }
+    } else if (
+      ctx.newPath &&
+      ref.kind === 'register' &&
+      ref.name === '$r_path'
+    ) {
+      // CRR P4/T-4.3: $r_path → $path (GLOBAL_PATH), 与 path mark 一致
+      addrs[name] = { kind: 'internal', name: GLOBAL_PATH }
+    } else if (
+      ctx.newPath &&
+      ref.kind === 'register' &&
+      ref.name.startsWith('$r_')
+    ) {
+      // CRR P4/T-4.3: $r_* 寄存器名在 new path 下保持全局（不 scope-prefix）
+      // 原因:大量经验依赖 $r_cur/$r_content/$r_bytes 等作为跨帧/跨经验全局寄存器，
+      // scope-prefixing 会破坏此机制。
+      addrs[name] = { kind: 'internal', name: ref.name }
+    } else if (
+      ctx.newPath &&
       direction === 'in' &&
       /^\$r_/.test(ref.name) &&
       !(ref.name.startsWith('$S') || ref.name === '$err' || ref.name === '$path' || ref.name === '$r_err' || ref.name === '$r_path')
@@ -671,8 +677,29 @@ export function compileOp(
   ctx.currentOpName = opName
   const ins = expandRefs(inputRefs, 'in', spec, ctx)
   const outs = expandRefs(outputRefs, 'out', spec, ctx)
+
+  // CRR T-1.6/P4: evaluate_expr 在 new path 下需要 env map（与 compileBranch 一致）
+  // 否则 var.name='$r_err' 等找不到对应寄存器而 VARIABLE_NOT_FOUND
+  let envSidecar: StackEntry[] = []
+  let envAddr: Record<string, Address> | undefined
+  if (ctx.newPath && opName === 'evaluate_expr' && ctx.scopeId && ctx.outputsByAlias) {
+    // 从 inputRefs.expr 提取 Expr AST（literal ParamRef 的 value）
+    const exprRef = inputRefs.expr
+    if (exprRef && exprRef.kind === 'literal') {
+      const expr = exprRef.value as unknown as import('../l2/builtins/evaluate-expr.js').Expr
+      const inputNames = new Set(Object.keys(ctx.intent.params ?? {}))
+      const env = buildEnvMap(expr, ctx.scopeId, ctx.outputsByAlias, inputNames)
+      const envRegName = ctx.allocator!.allocateArgtmpSlot(ctx.scopeId!)
+      envSidecar.push(
+        makeMove({ kind: 'literal', value: env as unknown as Value }, { kind: 'internal', name: envRegName })
+      )
+      envAddr = { env: { kind: 'internal', name: envRegName } }
+    }
+  }
+
   return [
     ...ins.moves,
+    ...envSidecar,
     ...outs.moves, // outputs 一般无 literal，但保持对称（会 throw）
     {
       id: generateId(idPrefix.slice(0, 4)),
@@ -680,7 +707,7 @@ export function compileOp(
       createdAt: now(),
       kind: 'execute_op',
       operation: opName,
-      inputs: ins.addrs,
+      inputs: { ...ins.addrs, ...(envAddr ?? {}) },
       outputs: outs.addrs,
       status: 'pending'
     }

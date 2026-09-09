@@ -287,8 +287,8 @@ describe('Phase D-B: 多经验协作（编排经验串联 4 条核心经验）',
     expect(store.get('$r_content')).toBe('TODO: new-task')
     // replace_in_file 的替换计数也跨经验可见
     expect(store.get('$r_count')).toBe(1)
-    // 全程无错误
-    expect(store.get('$r_err')).toBeNull()
+    // 全程无错误 (P4/T-4.3: new path error output 写到 $err)
+    expect(store.get('$err')).toBeNull()
   })
 
   test('幂等性：第二次运行时 safe_write 跳过配置（bytes=0），其余照常', async () => {
@@ -309,7 +309,7 @@ describe('Phase D-B: 多经验协作（编排经验串联 4 条核心经验）',
     // safe_write 第二次跳过（$r_bytes 被 abort 路径置 0 后又被后续 write_file 覆盖，
     // 但 config 内容不变证明跳过生效）
     expect(await fs.readFile(configPath, 'utf-8')).toBe('[default]\nmode=demo')
-    expect(store2.get('$r_err')).toBeNull()
+    expect(store2.get('$err')).toBeNull()
   })
 })
 
@@ -335,7 +335,7 @@ describe('Phase D-C: 错误恢复（业务级失败检测 → 换策略重试）
       state2,
       { rootHandleError: true }
     )
-    expect(state2.internalStore.get('$r_err')).toBeNull()
+    expect(state2.internalStore.get('$err')).toBeNull()
     expect(await fs.readFile(p, 'utf-8')).toBe('x=b')
   })
 
@@ -463,10 +463,8 @@ describe('Phase D-D: CRR new-path scope/register 机制', () => {
     // (i) disk read-back：LAST 一次替换($r_replaced_2，KEEP_ME→KEPT_ME，OLD_TOKEN_A 保持不动因该 step 不碰它……wait——实际两次 replace 各自独立作用于 SAME $r_content 源值（不是链式串联），file_write 消费的是 LAST writer=$r_replaced_2=仅做了 KEEP_ME→KEPT_ME、未做 OLD_TOKEN_A→NEW_TOKEN_A)
     expect(await fs.readFile(p, 'utf-8')).toBe('OLD_TOKEN_A stays KEPT_ME here too OLD_TOKEN_A again')
 
-    // (ii) source out-slot ($S<scope>.out2, file_read.content slotIndex=2) 全程可读且值正确 —— value-based search 避免硬编码 scopeId/数字脆弱性
-    let srcSlotKey: string | undefined
-    for (const [k, v] of state.internalStore) if (v === SRC && /^\$S[0-9a-z]+\.out\d+$/.test(k)) { srcSlotKey = k; break }
-    expect(srcSlotKey).toBeDefined()
+    // (ii) P4/T-4.3: $r_content 全局寄存器全程可读且值正确（$r_* 全局化后不再 scope-prefixed）
+    expect(state.internalStore.get('$r_content')).toBe(SRC)
 
     // (iii) publicStore 空 —— chain-intermediate 未被误标 persist:true
     // publicStore 是原生 Map<string, Value>, .size 是属性不是方法 (同 tier-a02-execution-state.test.ts 现有用法)
@@ -525,13 +523,8 @@ describe('Phase D-D: CRR new-path scope/register 机制', () => {
     const state = createInitialState(registry, service)
     await l1MainLoop({ type: 'td_orchestrator', params: {} }, state, { rootHandleError: false })
 
-    // retention window：A(=SENTINEL)写入的物理 out-slot 在整个 run 结束后仍应可读到原值（value-based search，避免硬编码脆弱数值）。
-    let foundRetainedInScopedOutSlot = false
-    for (const [k, v] of state.internalStore) {
-      if (v === SENTINEL && /^\$S[0-9a-z]+\.out\d+$/.test(k)) { foundRetainedInScopedOutSlot = true; break }
-    }
-    // A.content=${SENTINEL} 的 scoped out-slot 应在整个 run 期间保留不被覆写
-    expect(foundRetainedInScopedOutSlot).toBe(true)
+    // P4/T-4.3: $r_content 全局寄存器在整个 run 期间保留原值（$r_* 全局化后不再 scope-prefixed）
+    expect(state.internalStore.get('$r_content')).toBe(SENTINEL)
     // persist binding 保持一致的原值
     expect(state.publicStore.get('td_reader.content')).toBe(SENTINEL)
   })
