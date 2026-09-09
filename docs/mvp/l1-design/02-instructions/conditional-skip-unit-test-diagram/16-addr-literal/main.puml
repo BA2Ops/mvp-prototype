@@ -1,0 +1,29 @@
+@startuml
+title Test #16: literal kind 抛 ConditionalSkipError
+
+object "Before" as b {
+  state.stack:
+  [top] cond
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ ConditionalSkipError thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  expect(executeConditionalSkip(cond, state)).rejects.toThrow(ConditionalSkipError)
+end note
+
+@enduml

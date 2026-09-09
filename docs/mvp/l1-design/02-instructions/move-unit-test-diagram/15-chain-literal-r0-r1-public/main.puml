@@ -1,0 +1,29 @@
+@startuml
+title Test #15: 链式 literal → $r0 → $r1 → public
+
+object "Before\nstate (all unset)" as sb {
+  literal: 'chain'
+  $r0     = <unset>
+  $r1     = <unset>
+  publicStore: final_output = <unset>
+}
+
+object "After" as sa {
+  $r0     = "chain"
+  $r1     = "chain"
+  publicStore: final_output = "chain"
+}
+
+sb ..> sa : 3 × executeMove\n  ① literal→$r0\n  ② $r0→$r1\n  ③ $r1→public
+
+note right of sa
+  **验证（三处终点全部一致）**
+  internalStore.get('$r0')
+    === 'chain' ✓
+  internalStore.get('$r1')
+    === 'chain' ✓
+  publicStore.get('final_output')
+    === 'chain' ✓
+end note
+
+@enduml

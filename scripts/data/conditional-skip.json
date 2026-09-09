@@ -1,0 +1,820 @@
+[
+  {
+    "n": 1,
+    "title": "条件为真且 n 足够大 → 停在帧前",
+    "slug": "frame-boundary-truthy",
+    "kind": "positive",
+    "purpose": "truthy 分支深层弹出同样受 execute_intent 帧标记拦截——不被跨越出当前帧。",
+    "preparation": "$r_flag = true\nstack: [frame(IE), m1, self]\nentry: conditional_skip($r_flag, n=5)",
+    "assertion": "expect(stack.map(e=>e.id)).toEqual(['frame'])",
+    "note": "conditional_skip 与 skip_n 同享帧边界保护——本用例确认 truthy 分支不绕过。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "frame(IE)",
+        "m1",
+        "self"
+      ],
+      "stack_after": null,
+      "int_before": {
+        "$r_flag": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 2,
+    "title": "null/undefined → false",
+    "slug": "istruthy-null-undefined",
+    "kind": "positive",
+    "purpose": "两个最经典 falsy 代表各自归类。",
+    "preparation": "isTruthy(null)\nisTruthy(undefined)",
+    "assertion": "expect(isTruthy(null)).toBe(false)\nexpect(isTruthy(undefined)).toBe(false)",
+    "note": "isTruthy helper 是本 primitive 的判定基石——单独抽出验证。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 3,
+    "title": "boolean → 本人",
+    "slug": "istruthy-boolean",
+    "kind": "positive",
+    "purpose": "true/false 原样透传不经过任何额外换算。",
+    "preparation": "isTruthy(true)\nisTruthy(false)",
+    "assertion": "expect(isTruthy(true)).toBe(true)\nexpect(isTruthy(false)).toBe(false)",
+    "note": "防止实现误以为要做一层短路优化而改变后续统一入口的语义。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 4,
+    "title": "number: 0 → false, 非零 → true",
+    "slug": "istruthy-number",
+    "kind": "positive",
+    "purpose": "JS 数字里 0 是唯一特殊值——正数/负数等非零值都应当 truthy。",
+    "preparation": "isTruthy(0), isTruthy(-0), isTruthy(1), isTruthy(-1), isTruthy(42)",
+    "assertion": "expect(isTruthy(0)).toBe(false)\nexpect(isTruthy(-0)).toBe(false)\nexpect(isTruthy(1)).toBe(true)\nexpect(isTruthy(-1)).toBe(true)\nexpect(isTruthy(42)).toBe(true)",
+    "note": "覆盖符号位场景——防止实现意外把符号当作有效判定依据。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 5,
+    "title": "string: 空串 → false, 非空 → true",
+    "slug": "istruthy-string",
+    "kind": "positive",
+    "purpose": "字符串家族唯一 falsy 是 length===0。",
+    "preparation": "isTruthy(''), isTruthy('hello'), isTruthy(' ')",
+    "assertion": "expect(isTruthy('')).toBe(false)\nexpect(isTruthy('hello')).toBe(true)\nexpect(isTruthy(' ')).toBe(true)",
+    "note": "空格视为非空——与经典 JS 语义一致。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 6,
+    "title": "array: 空数组 → false, 非空 → true",
+    "slug": "istruthy-array",
+    "kind": "positive",
+    "purpose": "结构类型家族第一例：长度可数的容器。",
+    "preparation": "isTruthy([]), isTruthy([1,2,3]), isTruthy([null])",
+    "assertion": "expect(isTruthy([])).toBe(false)\nexpect(isTruthy([1,2,3])).toBe(true)\nexpect(isTruthy([null])).toBe(true)",
+    "note": "含 null 元素的数组非空——判定的不是 elements 而是有无 element。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 7,
+    "title": "object: 空对象 → false, 非空 → true",
+    "slug": "istruthy-object",
+    "kind": "positive",
+    "purpose": "**注意**：判定按'自有 key 数量'而非 JS 引用 truthiness。",
+    "preparation": "isTruthy({}), isTruthy({key:'value'}), isTruthy({null:null})",
+    "assertion": "expect(isTruthy({})).toBe(false)\nexpect(isTruthy({key:'value'})).toBe(true)\nexpect(isTruthy({null:null})).toBe(true)",
+    "note": "实现敏感——朴素'引用是否非空'理解会得到相反结论，立即暴露实现用的是哪种规则。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 8,
+    "title": "error-as-data 场景：OperationError 对象 → truthy",
+    "slug": "istruthy-operationerror",
+    "kind": "positive",
+    "purpose": "用形似 $r_err 实际写入的结构化对象作为条件源——确认这条锚点落在 truthy 一侧。",
+    "preparation": "isTruthy({code:'ENOENT', message:'not found', op:'file_read'})",
+    "assertion": "expect(isTruthy(err)).toBe(true)",
+    "note": "非空对象一律 truthy——与生产 $r_err 写入结构一致。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 9,
+    "title": "conditional_skip 用空对象作为条件值（false 分支）",
+    "slug": "empty-object-false-branch",
+    "kind": "positive",
+    "purpose": "端到端验证：isTruthy({})===false 走'仅弹 self'分支。",
+    "preparation": "$r_cond = {}\nstack: [thenBlock, cond(n=0)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('thenBlock')",
+    "note": "从 #7 单独的 isTruthy 验证延伸到端到端 primitive 行为验证。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "cond(n=0)"
+      ],
+      "stack_after": [
+        "thenBlock"
+      ],
+      "int_before": {
+        "$r_cond": "{}"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 10,
+    "title": "truthy + n=0：弹出 self",
+    "slug": "basic-truthy-n-zero",
+    "kind": "positive",
+    "purpose": "命中跳转但跨度为零——只做 conditional_skip 自身这条指令本应完成的收尾动作。",
+    "preparation": "$r_cond = true\nstack: [m1, cond(n=0)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('m1')",
+    "note": "与 skip_n 的 n=0 行为对齐——只是额外做了条件判定。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "m1",
+        "cond(n=0)"
+      ],
+      "stack_after": [
+        "m1"
+      ],
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 11,
+    "title": "truthy + n=2：弹出 self + 2 个后续",
+    "slug": "basic-truthy-n-two",
+    "kind": "positive",
+    "purpose": "跨条目跳跃首次登场：确认被跳过的两条确实从可见栈顶彻底消失。",
+    "preparation": "$r_cond = true\nstack: [keep, m1, m2, cond(n=2)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('keep')",
+    "note": "按 id 点名核对，避免'总数字对但错的条目被删'置换型 bug。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "keep",
+        "m1",
+        "m2",
+        "cond(n=2)"
+      ],
+      "stack_after": [
+        "keep"
+      ],
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 12,
+    "title": "falsy + n=0：仅弹出 self",
+    "slug": "basic-falsy-n-zero",
+    "kind": "positive",
+    "purpose": "未命中且跨度为零——与 #10 形成对称性检查点。",
+    "preparation": "$r_cond = false\nstack: [m1, m2, cond(n=0)]",
+    "assertion": "expect(stack.length).toBe(2)\nexpect(stack[0].id).toBe('m1')\nexpect(stack[1].id).toBe('m2')",
+    "note": "拦的是'实现上把 falsy+n=0 和 truthy+n=0 走成两段独立路径'的隐性差异。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "m1",
+        "m2",
+        "cond(n=0)"
+      ],
+      "stack_after": [
+        "m1"
+      ],
+      "int_before": {
+        "$r_cond": "false"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 13,
+    "title": "falsy + n=2：仅弹 self，不跳 m1/m2",
+    "slug": "basic-falsy-n-two",
+    "kind": "positive",
+    "purpose": "本组最有区分力的一条：同 n=2 在 truthy 侧会触发两条跳过，在 falsy 侧必须完全不碰。",
+    "preparation": "$r_cond = null\nstack: [keep, m1, m2, cond(n=2)]",
+    "assertion": "expect(stack.length).toBe(3)\n保留 m1/m2 相对次序",
+    "note": "防止实现把判定条件布尔极性反转或弹栈数量公式写串。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "keep",
+        "m1",
+        "m2",
+        "cond(n=2)"
+      ],
+      "stack_after": [
+        "(length=3)"
+      ],
+      "int_before": {
+        "$r_cond": "null"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 14,
+    "title": "$r_err = null（成功）→ falsy",
+    "slug": "r-err-null",
+    "kind": "positive",
+    "purpose": "op 执行顺利时该位置会被写回 null 而非删除——把这种约定好的'代表一切正常'的具体内容原封不动喂给条件判定。",
+    "preparation": "internalStore.set('$r_err', null)\nstack: [thenBlock, cond(n=0)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('thenBlock')",
+    "note": "与 #10/#12 同模式断言——这次携带的是可追溯到具体生产语义的输入。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "cond(n=0)"
+      ],
+      "stack_after": [
+        "thenBlock"
+      ],
+      "int_before": {
+        "$r_err": "null"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 15,
+    "title": "$r_err = OperationError（失败）→ truthy",
+    "slug": "r-err-operationerror",
+    "kind": "positive",
+    "purpose": "op 报错后写入的结构化对象稳定落 truthy，驱动 conditional_skip 进入跳过分支。",
+    "preparation": "internalStore.set('$r_err', {code,message,op,timestamp})\nstack: [thenBlock, cond(n=1)]",
+    "assertion": "expect(stack.length).toBe(0)",
+    "note": "拦的是'错误对象被误判成 success'的方向反转型退化。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "cond(n=1)"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": {
+        "$r_err": "{code,message,op,timestamp}"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 16,
+    "title": "literal kind 抛 ConditionalSkipError",
+    "slug": "addr-literal",
+    "kind": "negative",
+    "purpose": "非法 kind 第一种代表样本。",
+    "preparation": "conditionAddr={kind:'literal', value:true} as any\nstack: [cond]",
+    "assertion": "expect(executeConditionalSkip(cond, state)).rejects.toThrow(ConditionalSkipError)\nexpect(...).rejects.toThrow(/must be internal/)",
+    "note": "双断言：类型对 + message 含 'must be internal'。",
+    "view": "error",
+    "state": {
+      "stack_before": [
+        "cond"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ConditionalSkipError"
+    }
+  },
+  {
+    "n": 17,
+    "title": "public kind 抛 ConditionalSkipError",
+    "slug": "addr-public",
+    "kind": "negative",
+    "purpose": "非法 kind 第二种：验证按'是否 internal'二元分类而非逐枚举黑名单。",
+    "preparation": "conditionAddr={kind:'public', name:'business_var'} as any",
+    "assertion": "expect(executeConditionalSkip(cond, state)).rejects.toThrow(ConditionalSkipError)",
+    "note": "拦的是'只记住几个常见敌人'的不彻底防御写法。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ConditionalSkipError"
+    }
+  },
+  {
+    "n": 18,
+    "title": "file kind 抛 ConditionalSkipError",
+    "slug": "addr-file",
+    "kind": "negative",
+    "purpose": "非法 kind 第三种：即便 file 已从 Address union 移除，运行期仍独立识别。",
+    "preparation": "conditionAddr={kind:'file', path:'/tmp/x'} as any",
+    "assertion": "expect(executeConditionalSkip(cond, state)).rejects.toThrow(ConditionalSkipError)",
+    "note": "用 as any 绕过 TS 静态检查——验证运行时独立判断逻辑。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ConditionalSkipError"
+    }
+  },
+  {
+    "n": 19,
+    "title": "internal kind 通过校验",
+    "slug": "addr-internal-ok",
+    "kind": "positive",
+    "purpose": "正向基准：合法 kind 不被误伤。",
+    "preparation": "$r_cond = true\nconditionAddr.kind='internal'",
+    "assertion": "expect(executeConditionalSkip(cond, state)).resolves.not.toThrow()",
+    "note": "全组四条里唯一一条期望成功完成的对照基准线。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 20,
+    "title": "n=-1 抛 ConditionalSkipError",
+    "slug": "param-n-negative-min",
+    "kind": "negative",
+    "purpose": "最小越下界代表样本点。",
+    "preparation": "entry.n=-1\n$r_cond=true",
+    "assertion": "expect(...).rejects.toThrow(ConditionalSkipError)\nexpect(...).rejects.toThrow(/n must be >= 0/)",
+    "note": "message 含 'n must be >= 0'。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ConditionalSkipError"
+    }
+  },
+  {
+    "n": 21,
+    "title": "n=-100 抛 ConditionalSkipError",
+    "slug": "param-n-negative-deep",
+    "kind": "negative",
+    "purpose": "深值样本防止判定只精确记住了某个特定哨兵值等值比较。",
+    "preparation": "entry.n=-100",
+    "assertion": "expect(...).rejects.toThrow(ConditionalSkipError)",
+    "note": "对称性检查——最小与深值都应被拦下。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ConditionalSkipError"
+    }
+  },
+  {
+    "n": 22,
+    "title": "内部寄存器不存在视为 falsy（不抛错）",
+    "slug": "graceful-missing-reg",
+    "kind": "positive",
+    "purpose": "享受比通用 resolver 更宽容的缺省语义：未写入的 internal register 视为 falsy。",
+    "preparation": "故意不 set $r_uninit\nstack: [m, cond(n=0)]",
+    "assertion": "expect(...).resolves.not.toThrow()\nexpect(stack.length).toBe(1)",
+    "note": "拦的是'偷懒复用 resolver 严格语义'导致本该宽限的边缘情形被误伤。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "m",
+        "cond(n=0)"
+      ],
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 23,
+    "title": "栈不足时不抛错（truthy 但栈已空）",
+    "slug": "graceful-stack-underflow",
+    "kind": "positive",
+    "purpose": "truthy 侧请求弹 6 个但栈只剩 self——graceful 处理而非越界抛错。",
+    "preparation": "$r_cond = true\nstack: [cond(n=5)]",
+    "assertion": "expect(...).resolves.not.toThrow()\nexpect(stack.length).toBe(0)",
+    "note": "与 skip_n 同哲学——栈不足不构成致命故障。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond(n=5)"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 24,
+    "title": "完整流程：file_read 错误 → 走 else 块",
+    "slug": "dag-error-then-else",
+    "kind": "positive",
+    "purpose": "真实 DAG：$r_err 为 OperationError → cond_skip truthy → 弹 self+else+skipN → 后续执行 then_block。",
+    "preparation": "$r_err={ENOENT}\nstack: [thenBlock, skipN(1), elseBlock, cond_skip($r_err, n=2)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('thenBlock')",
+    "note": "错误主路径——典型的 'if (file_read failed) run else'。",
+    "subfig": {
+      "name": "dag-error-flow.puml",
+      "title": "DAG 错误主路径时序",
+      "body": "@startuml\ntitle Subfigure: #24 DAG 错误主路径时序\n\nparticipant file_read as FR\nparticipant cond_skip as CS\nparticipant elseBlock as EB\nparticipant thenBlock as TB\ndatabase \"$r_err\" as ERR\n\nFR -> ERR : set(ENOENT, ...)\nnote right of ERR : OperationError 结构\n\nCS -> ERR : read $r_err\nERR --> CS : truthy (non-empty obj)\nCS -> CS : pop self\nCS -> EB : pop elseBlock (n=2)\nCS -> EB : pop skipN (n=2)\n\nnote over TB : stack 剩 [thenBlock]\nTB -> TB : 执行 then_block\n\n@enduml\n"
+    },
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "skipN(1)",
+        "elseBlock",
+        "cond_skip($r_err",
+        "n=2)"
+      ],
+      "stack_after": [
+        "thenBlock"
+      ],
+      "int_before": {
+        "$r_err": "{ENOENT}"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 25,
+    "title": "完整流程：file_read 成功 → 走 then 块",
+    "slug": "dag-success-then",
+    "kind": "positive",
+    "purpose": "真实 DAG：$r_err 为 null → cond_skip falsy → 仅弹 self → 后续执行 elseBlock。",
+    "preparation": "$r_err=null\nstack: [thenBlock, skipN(1), elseBlock, cond_skip($r_err, n=2)]",
+    "assertion": "expect(stack.length).toBe(3)\n保留 thenBlock, skipN, elseBlock",
+    "note": "成功主路径——典型的 'if (file_read OK) run then'。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "skipN(1)",
+        "elseBlock",
+        "cond_skip($r_err",
+        "n=2)"
+      ],
+      "stack_after": [
+        "(length=3)"
+      ],
+      "int_before": {
+        "$r_err": "null"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 26,
+    "title": "先 move 写入 $r_cond，再 conditional_skip",
+    "slug": "coexist-with-move",
+    "kind": "positive",
+    "purpose": "端到端展示 move → register → conditional_skip 读取的最小链路。",
+    "preparation": "stack: [cond, move_entry]\n模拟 move 已写 $r_cond=true",
+    "assertion": "cond_skip truthy 弹 self 后 stack.length===0",
+    "note": "跨 primitive 最小集成测试——move 提供数据、conditional_skip 判定使用。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond",
+        "move_entry"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 27,
+    "title": "连续两个 conditional_skip",
+    "slug": "consecutive-two",
+    "kind": "positive",
+    "purpose": "两个相邻 cond 各自读取不同寄存器后互不干扰。",
+    "preparation": "$r_a=true, $r_b=false\nstack: [cond1($r_a,n=0), cond2($r_b,n=0)]",
+    "assertion": "先 pop cond2 falsy → stack.length===1\n再 pop cond1 truthy → stack.length===0",
+    "note": "交叉场景——验证多 cond 的弹栈顺序由各自条件决定而非栈结构。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond1($r_a",
+        "n=0)",
+        "cond2($r_b",
+        "n=0)"
+      ],
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": {
+        "$r_a": "true",
+        "$r_b": "false"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 28,
+    "title": "不动 publicStore",
+    "slug": "state-preserve-publicstore",
+    "kind": "neutral",
+    "purpose": "conditional_skip 不应触碰业务存储区。",
+    "preparation": "publicStore.set('business_data','preserve')\n$r_cond=true\nstack: [cond]",
+    "assertion": "expect(publicStore.get('business_data')).toBe('preserve')",
+    "note": "基线 check——conditional_skip 只动栈与指定 internal reg。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond"
+      ],
+      "stack_after": null,
+      "int_before": {
+        "$r_cond": "true"
+      },
+      "int_after": null,
+      "pub_before": {
+        "business_data": "preserve"
+      },
+      "pub_after": {
+        "business_data": "preserve"
+      },
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 29,
+    "title": "不动其他 internal 寄存器",
+    "slug": "state-preserve-other-reg",
+    "kind": "neutral",
+    "purpose": "conditional_skip 不应改写未涉及的内部寄存器。",
+    "preparation": "internalStore.set('$r_other','preserve')\n$r_cond=true\nstack: [cond]",
+    "assertion": "expect(internalStore.get('$r_other')).toBe('preserve')",
+    "note": "only conditionAddr.name 引用的寄存器可能被读取，其他不动。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond"
+      ],
+      "stack_after": null,
+      "int_before": {
+        "$r_cond": "true",
+        "$r_other": "preserve"
+      },
+      "int_after": {
+        "$r_other": "preserve"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 30,
+    "title": "不动 allocator",
+    "slug": "state-preserve-allocator",
+    "kind": "neutral",
+    "purpose": "conditional_skip 期间不分配任何 argtmp 槽位。",
+    "preparation": "allocator.allocate() × 2\nbefore = maxAllocated()\nstack: [cond]",
+    "assertion": "expect(allocator.maxAllocated()).toBe(before)",
+    "note": "conditional_skip 是栈+条件读取——不应涉及 argtmp 分配。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "cond"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 31,
+    "title": "是 Error 子类",
+    "slug": "error-identity",
+    "kind": "neutral",
+    "purpose": "配套错误类的 name/message/instanceof Error 三项基本身份属性。",
+    "preparation": "new ConditionalSkipError('test')",
+    "assertion": "expect(err).toBeInstanceOf(Error)\nexpect(err.name).toBe('ConditionalSkipError')\nexpect(err.message).toBe('test')",
+    "note": "sanity check——三项缺一不可，少验任何一项都可能掩盖字段丢失型退化。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  }
+]

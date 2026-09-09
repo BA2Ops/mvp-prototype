@@ -1,0 +1,32 @@
+@startuml
+title Subfigure: #15 链式调用三步时序
+
+participant "test code" as TC
+participant "executeMove" as MV
+database "internalStore" as IS
+database "publicStore" as PS
+
+== Step 1: literal → $r0 ==
+TC -> MV : executeMove(\n  literal{'chain'} → $r0)
+MV -> IS : set('$r0', 'chain')
+note over IS : $r0 = "chain"
+
+== Step 2: $r0 → $r1 ==
+TC -> MV : executeMove(\n  $r0 → $r1)
+MV -> IS : get('$r0')
+MV -> IS : set('$r1', 'chain')
+note over IS : $r0 = "chain"\n$r1 = "chain"
+
+== Step 3: $r1 → public ==
+TC -> MV : executeMove(\n  $r1 → public{'final_output'})
+MV -> IS : get('$r1')
+MV -> PS : set('final_output', 'chain')
+note over PS : final_output = "chain"
+
+note right of TC
+  三步全部独立完成
+  没有任何一步需要等待前一步的中间产物
+  （除 from 引用外）
+end note
+
+@enduml

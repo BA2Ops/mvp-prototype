@@ -1,0 +1,31 @@
+@startuml
+title Test #5: n=3：弹出 self + 3 个后续（4 个）
+
+object "Before\nstate.stack" as stack_b {
+  [0]  keep
+  [1]  m3
+  [2]  m2
+  [3]  m1
+  [top] skip(n=3)
+}
+object "After\nstate.stack" as stack_a {
+  [top] keep
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(stack.length).toBe(1)
+end note
+
+@enduml

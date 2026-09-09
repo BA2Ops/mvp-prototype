@@ -1,0 +1,23 @@
+@startuml
+title Test #14: 错误时状态不变（atomic）
+
+object "Before" as ib {
+  internalStore:
+    $r0 = "pre-existing"  ← 哨兵
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = "pre-existing"  ← 哨兵未变
+}
+
+ib ..> ia : executeMove(\n  from={internal, name:'$missing'}\n  to  ={internal, name:'$r0'}\n) ✗ AddressError
+
+note right of ia
+  **验证（一条核心断言）**
+  internalStore.get('$r0')
+    === 'pre-existing' ✓
+  resolve 失败 → write 永远不执行
+end note
+
+@enduml

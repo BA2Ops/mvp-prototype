@@ -16,6 +16,7 @@
 | [08-environment-context.md](./08-environment-context.md) | 环境上下文（Environment Context）：会话级、持久化的环境元数据，与 AI 行业"context"刻意区分 |
 | [09-l1-implementation.md](./09-l1-implementation.md) | L1 实现设计：Runtime、Operation 注册、动态加载（TypeScript MVP） |
 | [10-reactive-execution-model.md](./10-reactive-execution-model.md) | 响应式执行模型：L1 调度器 + 异构指令栈 + 错误处理即 StandardIntent |
+| [l1-design/](./l1-design/) | **L1 设计权威源（独立文件夹，2026-08-22 新增）**：落地后现状描述，区别于上面 06/09/10 等早期设计稿。首篇 [架构总览](./l1-design/01-architecture-overview.md)；后续拆分为 L1 指令集参考、寄存器文件、错误处置权等 sibling 文档（规划中） |
 | [11-prototype-implementation-plan.md](./11-prototype-implementation-plan.md) | 原型实现计划：28 个 tier / 5 个 Phase（A-E）+ 迭代协议（Gate 检查点 / FDR / 重写协议） |
 | [12-experience-model.md](./12-experience-model.md) | L3 经验（Experience）模型设计响应：pre-processing + conditional-judgment + target-op 三段式（2026-08-20 新增） |
 | [19-register-file-core.md](./19-register-file-core.md) | **核心需求文档（Draft v0.1，2026-08-21）**：寄存器文件重设 CRR——必须支持的 5 项能力基线（C1–C5）+ 关键预期与不变量 K1–K5（多请求隔离 / 串行 CALL 无真并发 / U_max≈76 含深度线性叠加且由 maxConcurrentScopes≤8 钉死 / scope prefix = 逻辑独立≠物理 reclaim / publicStore 是平行增长通道）+ 明确不做 N1–N6 + P0 评审 checklist |

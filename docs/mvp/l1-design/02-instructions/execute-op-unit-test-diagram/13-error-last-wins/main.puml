@@ -1,0 +1,29 @@
+@startuml
+title Test #13: 多次执行：$r_err 被后一次 op 覆盖（last-wins）
+
+object "Before" as b {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ Error thrown thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  第一次后 $r_err.code === 'E_FIRST'
+end note
+
+@enduml

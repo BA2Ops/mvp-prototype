@@ -1,0 +1,26 @@
+@startuml
+title Subfigure: #16 同名 target 两轮覆盖对比
+
+state "Round 1\nsetup $r0='v1'" as r1
+state "After Round 1\n$r1='v1'" as ar1
+state "Round 2\n$r0='v2'" as r2
+state "After Round 2\n$r1='v2'" as ar2
+
+r1 --> ar1 : executeMove($r0=v1 → $r1)
+ar1 --> r2 : set('$r0', 'v2')
+r2 --> ar2 : executeMove($r0=v2 → $r1)\n↑ 写入覆盖旧值
+
+note right of ar2
+  **核心断言**
+  internalStore.get('$r1')
+    === 'v2' ✓
+  验证覆盖语义而非追加
+  （不保留 v1 副本）
+end note
+
+note left of r1
+  初始：$r0='v1'
+  $r1 未设置
+end note
+
+@enduml

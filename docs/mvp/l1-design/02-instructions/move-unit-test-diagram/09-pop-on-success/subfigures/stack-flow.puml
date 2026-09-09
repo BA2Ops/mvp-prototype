@@ -1,0 +1,30 @@
+@startuml
+title Subfigure: #9 栈 push → executeMove → self-pop 时序
+
+participant "main loop" as ML
+participant "state.stack" as ST
+participant "executeMove" as MV
+
+ML -> ST : push(marker-1)
+ML -> ST : push(move entry)
+note over ST : length=2
+
+ML -> MV : executeMove(entry)
+activate MV
+MV -> MV : resolve(from)
+MV -> MV : write(to)
+MV -> ST : pop self
+deactivate MV
+
+note over ST : length=1（恰好减 1）
+
+note right of MV
+  executeMove 内部完成 4 步：
+  ① 验证 from/to 是合法 Address
+  ② resolve 读 from 值
+  ③ write 写到 to
+  ④ 把自身从栈顶弹出
+  失败时跳过 ③④
+end note
+
+@enduml

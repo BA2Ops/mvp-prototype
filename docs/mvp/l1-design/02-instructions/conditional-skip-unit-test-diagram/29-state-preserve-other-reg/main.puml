@@ -1,0 +1,28 @@
+@startuml
+title Test #29: 不动其他 internal 寄存器
+
+object "Before\nstate.stack" as stack_b {
+  [top] cond
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  $r_cond = true
+  $r_other = preserve
+}
+object "After\nstate.internalStore" as int_a {
+  $r_other = preserve
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(internalStore.get('$r_other')).toBe('preserve')
+end note
+
+@enduml

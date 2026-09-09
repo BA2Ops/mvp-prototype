@@ -1,0 +1,28 @@
+@startuml
+title Test #24: 不动其他内部寄存器
+
+object "Before\nstate.internalStore" as int_b {
+  $r0 = 5
+  $r_other = preserve
+}
+object "After\nstate.internalStore" as int_a {
+  $rr_other = preserve
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : execute(entry, state)
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  $r_other === 'preserve'
+end note
+
+@enduml

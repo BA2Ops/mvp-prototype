@@ -1,0 +1,26 @@
+@startuml
+title Test #9: 成功时弹栈
+
+object "Before\nstate.stack (length=2)" as sb {
+  [0] pre-marker
+  [1] move entry
+}
+
+object "After\nstate.stack (length=1)" as sa {
+  [0] pre-marker
+}
+
+sb ..> sa : executeMove(entry)\n  ↑ entry 自我弹出
+
+note right of sb
+  压栈 2 条不同 entry
+  只对 move entry 调 executeMove
+end note
+
+note right of sa
+  **验证（前后两次断言）**
+  stack.length === 2  (前)
+  stack.length === 1  (后) ✓
+end note
+
+@enduml

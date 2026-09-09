@@ -1,0 +1,29 @@
+@startuml
+title Test #20: n=-1 抛 ConditionalSkipError
+
+object "Before" as b {
+  state.stack:
+  (empty)
+  state.internalStore:
+  $r_cond = true
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ ConditionalSkipError thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  expect(...).rejects.toThrow(ConditionalSkipError)
+end note
+
+@enduml

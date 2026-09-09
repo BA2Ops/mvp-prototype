@@ -1,0 +1,29 @@
+@startuml
+title Test #5: literal input 抛 ExecuteOpError
+
+object "Before" as b {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ ExecuteOpError thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  rejects.toThrow(ExecuteOpError)
+end note
+
+@enduml

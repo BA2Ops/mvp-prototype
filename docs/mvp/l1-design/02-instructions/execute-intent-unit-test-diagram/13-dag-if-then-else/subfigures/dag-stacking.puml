@@ -1,0 +1,29 @@
+@startuml
+title Subfigure: #13 DAG 编译产物逆序压栈时序
+
+participant L3 as L
+participant executeIntent as EI
+database state.stack as ST
+
+L -> L : compile(intent)
+L --> EI : children = [op_file_read, cs, op_move, sn, op_write]
+note right of EI
+  5 条 children
+  children[0]=op_file_read（最先执行）
+  children[4]=op_write（最后执行）
+end note
+
+EI -> ST : push op_write
+EI -> ST : push sn
+EI -> ST : push op_move
+EI -> ST : push cs
+EI -> ST : push op_file_read
+
+note over ST
+  栈（底→顶）:
+  [entry, op_write, sn, op_move, cs, op_file_read]
+end note
+
+EI -> ST : entry.phase = 'awaiting_children'
+
+@enduml

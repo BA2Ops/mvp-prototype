@@ -1,0 +1,27 @@
+@startuml
+title Test #3: 多个 inputs
+
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  $rr2 = 99
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : execute(entry, state)
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  $r2 === 99
+end note
+
+@enduml

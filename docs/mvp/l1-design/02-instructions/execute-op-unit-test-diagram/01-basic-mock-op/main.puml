@@ -1,0 +1,28 @@
+@startuml
+title Test #1: 调用 mock_op：x → x*2
+
+object "Before\nstate.internalStore" as int_b {
+  $r0 = 5
+}
+object "After\nstate.internalStore" as int_a {
+  $r0 = 5
+  $r1 = 10
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : mock_op(x=5) → 10
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  $r1 === 10
+end note
+
+@enduml

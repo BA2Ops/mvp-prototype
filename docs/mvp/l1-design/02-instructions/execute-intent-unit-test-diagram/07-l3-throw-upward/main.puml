@@ -1,0 +1,27 @@
+@startuml
+title Test #7: L3 抛错时向上传播，不被 catch
+
+object "Before\nstate.stack" as stack_b {
+  (empty)
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+stack_b -[#red]right-> stack_a : ✗ Error thrown
+
+note right of stack_a
+  entry.status: pending → pending (failure path)
+  **验证**
+  rejects.toThrow('L3 compile failed')
+end note
+
+@enduml

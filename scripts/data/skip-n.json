@@ -1,0 +1,581 @@
+[
+  {
+    "n": 1,
+    "title": "弹出时遇到帧 → 停止（不跨帧）",
+    "slug": "frame-boundary-stop",
+    "kind": "positive",
+    "purpose": "truthy 分支深层弹出同样受 execute_intent 帧标记拦截——不被跨越出当前帧。",
+    "preparation": "stack: [frame(IE), m1, m2, self]\nentry: skip_n(n=3)",
+    "assertion": "expect(stack.map(e=>e.id)).toEqual(['frame'])",
+    "note": "verify 停驻位置由帧标记决定而非由 n 决定。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "frame(IE)",
+        "m1",
+        "m2",
+        "self"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    },
+    "action": "executeSkipN(skip, state)\n弹出 self + 后续（受帧边界拦截）"
+  },
+  {
+    "n": 2,
+    "title": "n 足够大也不跨帧（栈中保留帧）",
+    "slug": "frame-boundary-large-n",
+    "kind": "positive",
+    "purpose": "即使请求弹出远超实际条目的数量也不允许跨过帧。",
+    "preparation": "stack: [frame(IE), m1, self]\nentry: skip_n(n=100)",
+    "assertion": "expect(stack.map(e=>e.id)).toEqual(['frame'])",
+    "note": "m1 被吃掉但 frame 仍保留——边界绝对性。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "frame(IE)",
+        "m1",
+        "self"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 3,
+    "title": "n=0：仅弹出 self（1 个）",
+    "slug": "basic-n-zero",
+    "kind": "positive",
+    "purpose": "最简弹出：仅 self。",
+    "preparation": "stack: [marker-1, skip(n=0)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('marker-1')",
+    "note": "基础弹栈协议本身的最小锚点。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "marker-1",
+        "skip(n=0)"
+      ],
+      "stack_after": [
+        "marker-1"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 4,
+    "title": "n=1：弹出 self + 1 个后续（2 个）",
+    "slug": "basic-n-one",
+    "kind": "positive",
+    "purpose": "跨条目弹出一条。",
+    "preparation": "stack: [m2, m1, skip(n=1)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('m2')",
+    "note": "m1 确实被吃，不是仅打标记。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "m2",
+        "m1",
+        "skip(n=1)"
+      ],
+      "stack_after": [
+        "m2"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 5,
+    "title": "n=3：弹出 self + 3 个后续（4 个）",
+    "slug": "basic-n-three",
+    "kind": "positive",
+    "purpose": "跨条目弹出三条：被跳过的从可见栈顶彻底消失而非仅打标记。",
+    "preparation": "stack: [keep, m3, m2, m1, skip(n=3)]",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('keep')",
+    "note": "逐一按 id 点名核对，避免'总数字对但错的条目被删'的置换型 bug。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "keep",
+        "m3",
+        "m2",
+        "m1",
+        "skip(n=3)"
+      ],
+      "stack_after": [
+        "keep"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 6,
+    "title": "n=10：弹空所有栈（仅 1 个元素时）",
+    "slug": "basic-n-large",
+    "kind": "positive",
+    "purpose": "请求远超实际数量也能正常运行。",
+    "preparation": "stack: [skip(n=10)]",
+    "assertion": "expect(stack.length).toBe(0)",
+    "note": "弹空栈是合法终态，不应报错。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip(n=10)"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 7,
+    "title": "栈不足时不抛错（graceful）",
+    "slug": "graceful-underflow",
+    "kind": "positive",
+    "purpose": "n=5 但栈只剩 self——栈不足 graceful 处理而非越界抛错。",
+    "preparation": "stack: [skip(n=5)]",
+    "assertion": "expect(executeSkipN(skip, state)).resolves.not.toThrow()\nexpect(stack.length).toBe(0)",
+    "note": "与 move 的同类设计哲学一致：栈不足不构成致命故障。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip(n=5)"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 8,
+    "title": "空栈调用安全（虽然不符合实际执行流程）",
+    "slug": "graceful-empty",
+    "kind": "positive",
+    "purpose": "即便栈本就为空，被调用时也安全——防止被调用时不至于崩。",
+    "preparation": "stack: [] (不 push 任何 entry)\nentry: skip_n(n=3)",
+    "assertion": "expect(executeSkipN(skip, state)).resolves.not.toThrow()\nexpect(stack.length).toBe(0)",
+    "note": "main loop 不会从空栈取 skip_n 执行——此用例是防御性的'如果被调用'路径。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 9,
+    "title": "n=0 在空栈上调用",
+    "slug": "graceful-empty-n-zero",
+    "kind": "positive",
+    "purpose": "零弹请求 + 空栈组合。",
+    "preparation": "stack: [] (不 push)\nentry: skip_n(n=0)",
+    "assertion": "expect(executeSkipN(skip, state)).resolves.not.toThrow()\nexpect(stack.length).toBe(0)",
+    "note": "最小边界组合——零弹在空栈上不应报错。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 10,
+    "title": "n=-1 抛 SkipNError",
+    "slug": "param-n-negative-min",
+    "kind": "negative",
+    "purpose": "最小越下界样本。",
+    "preparation": "stack: [skip(n=-1)]",
+    "assertion": "expect(executeSkipN(skip, state)).rejects.toThrow(SkipNError)\nexpect(ex.executeSkipN(skip, state)).rejects.toThrow(/n must be >= /0/)",
+    "note": "message含 text 含 'n must be >= 0'——上层可差异化处理。",
+    "view": "error",
+    "state": {
+      "stack_before": [
+        "skip(n=-1)"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "SkipNError"
+    }
+  },
+  {
+    "n": 11,
+    "title": "n=-100 抛 SkipNError",
+    "slug": "param-n-negative-deep",
+    "kind": "negative",
+    "purpose": "深值样本：防止判定只记住某个特定哨兵值等值比较。",
+    "preparation": "entry: skip_n(n=-100)",
+    "assertion": "expect(executeSkipN(skip, state)).rejects.toThrow(SkipNError)",
+    "note": "对称性检查——深值与最小值都应被拦下。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "SkipNError"
+    }
+  },
+  {
+    "n": 12,
+    "title": "SkipNError 是 Error 子类",
+    "slug": "error-identity",
+    "kind": "neutral",
+    "purpose": "配套错误类的 name/message/instanceof Error 三项基本身份。",
+    "preparation": "new SkipNError('test')",
+    "assertion": "expect(err).toBeInstanceOf(Error)\nexpect(err.name).toBe('SkipNError')\nexpect(err.message).toBe('test')",
+    "note": "sanity check——三项缺一不可，少验任何一项都可能掩盖字段丢失型退化。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 13,
+    "title": "场景 1：跳过 then-block（条件为假）",
+    "slug": "dag-cond-false",
+    "kind": "positive",
+    "purpose": "条件为假路径：cond_skip 不跳，执行 else_block，然后 skip_n 跳过 then_block。",
+    "preparation": "stack: [thenBlock, skip(n=1)]\n（前置 cond_skip / else_block 已处理）",
+    "assertion": "expect(stack.length).toBe(0)",
+    "note": "测试 skip_n 在真实 DAG 场景中的'跳过 else 之后立即跳 then'角色。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "skip(n=1)"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 14,
+    "title": "场景 2：跳过 then-block（条件为真也走此路径）",
+    "slug": "dag-cond-true",
+    "kind": "positive",
+    "purpose": "条件为真路径：cond_skip 已跳走 else_block+skip_n——直接到 then_block，skip_n 不会被执行。",
+    "preparation": "stack: [thenBlock] (skip_n 不入栈)",
+    "assertion": "expect(stack.length).toBe(1)\nexpect(stack[0].id).toBe('then-block')",
+    "note": "验证前置状态：skip_n 在该路径下确实未被调度。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock"
+      ],
+      "stack_after": [
+        "then-block"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 15,
+    "title": "场景 3：完整 DAG 模拟（手动驱动）",
+    "slug": "dag-full-manual",
+    "kind": "positive",
+    "purpose": "端到端 DAG 模拟：栈 [thenBlock, skip(n=0)]，skip 弹 self 后剩 thenBlock。",
+    "preparation": "stack: [thenBlock, skip(n=0)]",
+    "assertion": "执行前 stack.length===2 且顶部为 skip\n执行 skip_n(0) 后 stack.length===1 仅剩 thenBlock",
+    "note": "DAG 调度手驱动测试——执行前后两个完整状态快照对比。",
+    "subfig": {
+      "name": "dag-sequence.puml",
+      "title": "DAG 三步调度时序",
+      "body": "@startuml\ntitle Subfigure: #15 DAG 三步调度时序\n\nparticipant test as T\nparticipant executeSkipN as SK\ndatabase state.stack as ST\n\nT -> ST : push(thenBlock)\nT -> ST : push(skip)\nnote over ST : length=2（bottom → top）\n\nT -> SK : executeSkipN(skip, n=0)\nactivate SK\nSK -> ST : pop self\ndeactivate SK\n\nnote over ST : length=1 仅剩 thenBlock\n\nT -> SK : executeSkipN(thenBlock)\nnote right of T\n  下一轮循环到 thenBlock 入口\n  由相应 handler 处理\nend note\n\n@enduml\n"
+    },
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "thenBlock",
+        "skip(n=0)"
+      ],
+      "stack_after": [
+        "(length=2)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 16,
+    "title": "不动 publicStore",
+    "slug": "state-preserve-publicstore",
+    "kind": "neutral",
+    "purpose": "skip_n 不应触碰业务存储区。",
+    "preparation": "publicStore.set('business_data', 'preserve me')\nstack: [skip]",
+    "assertion": "expect(publicStore.get('business_data')).toBe('preserve me')\nexpect(publicStore.has('business_data')).toBe(true)",
+    "note": "基线 check——skip_n 只动栈不动 store。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": {
+        "business_data": "preserve me"
+      },
+      "pub_after": {
+        "business_data": "preserve me"
+      },
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 17,
+    "title": "不动 internalStore",
+    "slug": "state-preserve-internalstore",
+    "kind": "neutral",
+    "purpose": "skip_n 不应改写任何内部寄存器，包括 $r_err。",
+    "preparation": "internalStore.set('$r0', 'preserve me')\ninternalStore.set('$r_err', null)\nstack: [skip]",
+    "assertion": "expect(internalStore.get('$r0')).toBe('preserve me')\nexpect(internalStore.has('$r_err')).toBe(true)",
+    "note": "包含 $r_err 全局功能寄存器——验证 skip_n 与 error 流无关。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip"
+      ],
+      "stack_after": null,
+      "int_before": {
+        "$r0": "preserve me",
+        "$r_err": "null"
+      },
+      "int_after": {
+        "$r0": "preserve me"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 18,
+    "title": "不动 allocator",
+    "slug": "state-preserve-allocator",
+    "kind": "neutral",
+    "purpose": "skip_n 期间不分配任何 argtmp 槽位。",
+    "preparation": "allocator.allocate() × 2\nbefore = maxAllocated()\nstack: [skip]",
+    "assertion": "expect(allocator.maxAllocated()).toBe(before)",
+    "note": "skip_n 是纯栈操作，不应涉及 argtmp 分配。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 19,
+    "title": "不动 l2/l3 引用",
+    "slug": "state-preserve-references",
+    "kind": "neutral",
+    "purpose": "skip_n 不应替换 registry / L3 引用。",
+    "preparation": "l2Ref = state.l2\nl3Ref = state.l3\nstack: [skip]",
+    "assertion": "expect(state.l2).toBe(l2Ref)\nexpect(state.l3).toBe(l3Ref)",
+    "note": "引用同一性检查——handler 内部错误地 replace registry 会立刻暴露。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip"
+      ],
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 20,
+    "title": "move 完成后再 skip_n",
+    "slug": "coexist-with-move",
+    "kind": "positive",
+    "purpose": "skip_n 在 move entry 已被弹出的栈基础上正常工作。",
+    "preparation": "stack: [skip, move]\n模拟 pop move → 栈顶变 skip",
+    "assertion": "执行后 stack.length === 0",
+    "note": "与其他 primitive 共存的最小集成测试。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip",
+        "move"
+      ],
+      "stack_after": [
+        "(length=0)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 21,
+    "title": "连续两个 skip_n",
+    "slug": "consecutive-two",
+    "kind": "positive",
+    "purpose": "两个相邻 skip 各自弹 self 后栈逐次递减。",
+    "preparation": "stack: [skip1, skip2] (均 n=0)",
+    "assertion": "先 pop skip2 → stack.length===1\n再 pop skip1 → stack.length===0",
+    "note": "多次连续调用——验证 pop 顺序不被破坏。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip1",
+        "skip2"
+      ],
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 22,
+    "title": "skip_n 之间有其他 entry",
+    "slug": "consecutive-with-other",
+    "kind": "positive",
+    "purpose": "skip_n 与非 skip entry 交替穿插——验证只弹 self 不污染中间条目。",
+    "preparation": "stack: [skip1, m, skip2] → 执行 skip2 → pop m → 执行 skip1",
+    "assertion": "skip2 后 stack.length===2；pop m 后===1；skip1 后===0",
+    "note": "穿插场景——保证 self-pop 不会越过应当保留的 entry。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "skip1",
+        "m",
+        "skip2"
+      ],
+      "stack_after": [
+        "(length=2)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  }
+]

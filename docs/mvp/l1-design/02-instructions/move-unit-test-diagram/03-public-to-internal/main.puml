@@ -1,0 +1,31 @@
+@startuml
+title Test #3: public → internal（业务加载到寄存器）
+
+object "Before" as ib {
+  publicStore:
+    business_var = "business_value"
+  internalStore:
+    $r0 = <unset>
+}
+
+object "After" as ia {
+  publicStore:
+    business_var = "business_value" (unchanged)
+  internalStore:
+    $r0 = "business_value"
+}
+
+ib ..> ia : executeMove(\n  from={kind:'public',   name:'business_var'}\n  to  ={kind:'internal', name:'$r0'}\n)
+
+note right of ib
+  **前置**
+  publicStore.set('business_var', 'business_value')
+end note
+
+note right of ia
+  **验证**
+  internalStore.get('$r0')
+    === 'business_value' ✓
+end note
+
+@enduml

@@ -1,0 +1,30 @@
+@startuml
+title Test #13: falsy + n=2：仅弹 self，不跳 m1/m2
+
+object "Before\nstate.stack" as stack_b {
+  [0]  keep
+  [1]  m1
+  [2]  m2
+  [top] cond(n=2)
+}
+object "After\nstate.stack" as stack_a {
+  [top] (length=3)
+}
+object "Before\nstate.internalStore" as int_b {
+  $r_cond = null
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(stack.length).toBe(3)
+end note
+
+@enduml

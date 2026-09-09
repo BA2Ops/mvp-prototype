@@ -1,0 +1,25 @@
+@startuml
+title Subfigure: #15 DAG 三步调度时序
+
+participant test as T
+participant executeSkipN as SK
+database state.stack as ST
+
+T -> ST : push(thenBlock)
+T -> ST : push(skip)
+note over ST : length=2（bottom → top）
+
+T -> SK : executeSkipN(skip, n=0)
+activate SK
+SK -> ST : pop self
+deactivate SK
+
+note over ST : length=1 仅剩 thenBlock
+
+T -> SK : executeSkipN(thenBlock)
+note right of T
+  下一轮循环到 thenBlock 入口
+  由相应 handler 处理
+end note
+
+@enduml

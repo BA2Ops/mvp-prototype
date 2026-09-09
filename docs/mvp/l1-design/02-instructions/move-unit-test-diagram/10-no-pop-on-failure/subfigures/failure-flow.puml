@@ -1,0 +1,30 @@
+@startuml
+title Subfigure: #10 失败时栈保留时序
+
+participant "main loop" as ML
+participant "state.stack" as ST
+participant "executeMove" as MV
+
+ML -> ST : push(move entry)
+note over ST : length=1
+
+ML -> MV : executeMove(entry)
+activate MV
+MV -> MV : resolve(from)\n✗ AddressError\n  (key '$missing' not found)
+note right of MV
+  resolve 阶段抛错
+  write 永远不执行
+  self-pop 也不执行
+end note
+MV --> ML : throw AddressError
+deactivate MV
+
+note over ST : length=1（原地保留）
+
+note right of ST
+  main loop 收到 reject 后
+  决定 abort 整条 frame
+  这条 entry 仍可见供诊断
+end note
+
+@enduml

@@ -1,0 +1,475 @@
+[
+  {
+    "n": 1,
+    "title": "调用 L3.compile，children 压入帧之上（帧保留）",
+    "slug": "basic-frame-retention",
+    "kind": "positive",
+    "purpose": "验证 executeIntent 把 L3.compile 返回的 children 逆序压栈到 entry 之上，entry 自身保留在栈底。",
+    "preparation": "createMockL3([c1, c2]) 两个 skip_n\nentry 推入栈底",
+    "assertion": "stack.length === 3\n[entry.id, 'c2', 'c1']\n依次 pop 得 c1 → c2 → entry",
+    "note": "帧保留——entry 不被弹出，children 逆序压栈。",
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "entry"
+      ],
+      "stack_after": [
+        "entry",
+        "c2",
+        "c1"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "awaiting_children",
+      "error": null
+    },
+    "action": "L3.compile([c1, c2])\n逆序压栈"
+  },
+  {
+    "n": 2,
+    "title": "children 压栈顺序：children[0] 在栈顶（先执行）",
+    "slug": "children-order",
+    "kind": "positive",
+    "purpose": "三个 children 时仍维持 children[0] 最先出栈的逆序语义。",
+    "preparation": "createMockL3([first, middle, last]) 三个 skip_n",
+    "assertion": "stack.map(e=>e.id) === [entry.id, 'last', 'middle', 'first']\n逐 pop 出 first/middle/last/entry",
+    "note": "children[0] 必须先执行——逆序约定。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 3,
+    "title": "空 children：帧保留，无子指令",
+    "slug": "empty-children",
+    "kind": "positive",
+    "purpose": "L3 返回 [] 时不抛错、不清栈，entry 直接进入 awaiting_children。",
+    "preparation": "createMockL3([])\nentry={type:'empty'}",
+    "assertion": "stack.length === 1 仅剩 entry\nentry.phase === 'awaiting_children'",
+    "note": "空 children 是合法输入——frame 保留等主循环收尾。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 4,
+    "title": "L3 compile 接收 intent 和 state 参数",
+    "slug": "l3-compile-args",
+    "kind": "positive",
+    "purpose": "L3 的 compile() 必须拿到正确的 intent（含 params）。",
+    "preparation": "createSpyL3([])\nentry={type:'my_intent', params:{path:'/tmp/test'}}",
+    "assertion": "spy.callCount() === 1\nlastIntent().type === 'my_intent'\nparams.path === '/tmp/test'",
+    "note": "verify L3.compile 被正确调用且参数透传。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 5,
+    "title": "pending → awaiting_children（done 由主循环收尾）",
+    "slug": "phase-awaiting-children",
+    "kind": "positive",
+    "purpose": "executeIntent 只推进到 awaiting_children；done 由主循环在栈顶回到帧时收尾标记。",
+    "preparation": "entry 初始 phase='pending'\ncreateMockL3([一个 skip_n])",
+    "assertion": "executeIntent 后 entry.phase === 'awaiting_children'\n'done' 路径不归本层负责",
+    "note": "phase 字段归属——executeIntent 推进但不收尾。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 6,
+    "title": "phase 字段类型正确（4 种）",
+    "slug": "phase-types",
+    "kind": "positive",
+    "purpose": "phase 枚举集合的纯类型检查。",
+    "preparation": "直接构造 phases 数组",
+    "assertion": "['pending','awaiting_children','done','aborted'].length === 4",
+    "note": "4 种 phase 枚举值完整覆盖状态机。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 7,
+    "title": "L3 抛错时向上传播，不被 catch",
+    "slug": "l3-throw-upward",
+    "kind": "negative",
+    "purpose": "L3.compile 抛出的异常不能被 executeIntent 静默吞掉，必须原样上抛。",
+    "preparation": "手写 mockL3：compile 抛 new Error('L3 compile failed')",
+    "assertion": "rejects.toThrow('L3 compile failed')\nentry.phase === 'awaiting_children'（compile 前已标记）",
+    "note": "错误向上传播——executeIntent 不做错误处理。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "Error"
+    }
+  },
+  {
+    "n": 8,
+    "title": "L3 返回空 children 与抛错是不同路径",
+    "slug": "empty-vs-throw",
+    "kind": "negative",
+    "purpose": "空 children 是正常 resolve，抛错是 reject；两条支路必须互不干扰。",
+    "preparation": "createMockL3([])\nentry={type:'empty'}",
+    "assertion": "resolves.not.toThrow()\nentry.phase === 'awaiting_children'",
+    "note": "与 #7 的抛错路径明显分离——防止混入。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 9,
+    "title": "handleError 是必填字段",
+    "slug": "handleerror-required",
+    "kind": "positive",
+    "purpose": "createIntentEntry 第二参 handleError 必须显式传入（true/false 二选一），构造时即落库。",
+    "preparation": "createIntentEntry({type:'t',params:{}}, true)\ncreateIntentEntry({type:'t2',params:{}}, false)",
+    "assertion": "entry.handleError === true\nentry2.handleError === false",
+    "note": "handleError 必填——L3 必须为每个 child intent 显式决策。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 10,
+    "title": "默认语义：false = 异常向上冒泡",
+    "slug": "handleerror-false-bubbles",
+    "kind": "positive",
+    "purpose": "L3 编译产物必须显式为每条 children 设置 handleError；缺省等同 false → 异常向上冒泡。",
+    "preparation": "构造 children[0]={...,handleError:false}",
+    "assertion": "children[0] 已定义且 handleError === false 显式存在（无 undefined 兜底）",
+    "note": "显式语义——禁止隐式 default。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 11,
+    "title": "按 type 路由到不同 children",
+    "slug": "route-by-type",
+    "kind": "positive",
+    "purpose": "L3 按 entry.intent.type 分派到预先 setChildren() 注册的 children 集合。",
+    "preparation": "createProgrammableL3()\nsetChildren('read_file', [read_step])\nsetChildren('write_file', [write_step1, write_step2])",
+    "assertion": "两次 executeIntent 后:\nstack=[entry1, read_step]\nstack=[entry2, write_step2, write_step1]",
+    "note": "按 type 路由——L3 注册表查询。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 12,
+    "title": "未注册的 type 路由返回空 children",
+    "slug": "unregistered-type",
+    "kind": "negative",
+    "purpose": "未注册 type 不抛错，等同于空编译产物，帧保留。",
+    "preparation": "createProgrammableL3()\nentry={type:'unregistered'}",
+    "assertion": "entry.phase === 'awaiting_children'\nstack.length === 1",
+    "note": "未注册 type 的 graceful 处理——不是 throw 而是空。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 13,
+    "title": "DAG if-then-else 编译产物正确压栈",
+    "slug": "dag-if-then-else",
+    "kind": "positive",
+    "purpose": "真实 L3 输出常是混合多指令的 children 序列：5 步 [op_file_read, cs, op_move, sn, op_write] 逆序压栈。",
+    "preparation": "createMockL3(5 entries 混合 execute_op/conditional_skip/skip_n)\nentry={type:'read_or_create_file'}",
+    "assertion": "stack=[entry, op_write, sn, op_move, cs, op_file_read]",
+    "note": "DAG 编译产物的真实场景——5 步混合指令。",
+    "subfig": {
+      "name": "dag-stacking.puml",
+      "title": "DAG 编译产物逆序压栈时序",
+      "body": "@startuml\ntitle Subfigure: #13 DAG 编译产物逆序压栈时序\n\nparticipant L3 as L\nparticipant executeIntent as EI\ndatabase state.stack as ST\n\nL -> L : compile(intent)\nL --> EI : children = [op_file_read, cs, op_move, sn, op_write]\nnote right of EI\n  5 条 children\n  children[0]=op_file_read（最先执行）\n  children[4]=op_write（最后执行）\nend note\n\nEI -> ST : push op_write\nEI -> ST : push sn\nEI -> ST : push op_move\nEI -> ST : push cs\nEI -> ST : push op_file_read\n\nnote over ST\n  栈（底→顶）:\n  [entry, op_write, sn, op_move, cs, op_file_read]\nend note\n\nEI -> ST : entry.phase = 'awaiting_children'\n\n@enduml\n"
+    },
+    "view": "stack",
+    "state": {
+      "stack_before": [
+        "entry"
+      ],
+      "stack_after": [
+        "entry",
+        "op_write",
+        "sn",
+        "op_move",
+        "cs",
+        "op_file_read"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "awaiting_children",
+      "error": null
+    },
+    "action": "L3.compile 5 步 children\n逆序压栈"
+  },
+  {
+    "n": 14,
+    "title": "嵌套 L3.compile 调用链（帧嵌套）",
+    "slug": "nested-frame",
+    "kind": "positive",
+    "purpose": "children 中包含另一个 execute_intent 子帧时，仍能维持多层帧栈结构。",
+    "preparation": "createMockL3([self_skip, self_entry{kind:'execute_intent'}])\nentry={type:'recursive_exp'}",
+    "assertion": "stack=[entry, self_entry, self_skip]\npop 顺序 self_skip → self_entry → entry",
+    "note": "帧嵌套——L3.compile 递归调用链。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 15,
+    "title": "不动 publicStore",
+    "slug": "state-preserve-publicstore",
+    "kind": "neutral",
+    "purpose": "executeIntent 不应触碰业务存储区。",
+    "preparation": "createMockL3([])\npublicStore.set('business_data','preserve')\nentry 推栈",
+    "assertion": "publicStore.get('business_data') === 'preserve'",
+    "note": "基线 check——executeIntent 只动栈与 entry.phase。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": {
+        "business_data": "preserve"
+      },
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 16,
+    "title": "不动 internalStore",
+    "slug": "state-preserve-internalstore",
+    "kind": "neutral",
+    "purpose": "executeIntent 不应改写任何内部寄存器，包括 $r_err。",
+    "preparation": "createMockL3([])\ninternalStore.set('$r0','preserve')\ninternalStore.set('$r_err', null)",
+    "assertion": "$r0 === 'preserve'\ninternalStore.has('$r_err') === true",
+    "note": "include $r_err 关键全局寄存器验证。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "preserve",
+        "$r_err": "null"
+      },
+      "int_after": {
+        "$rr0": "preserve"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 17,
+    "title": "不动 allocator",
+    "slug": "state-preserve-allocator",
+    "kind": "neutral",
+    "purpose": "executeIntent 期间不分配任何 argtmp 槽位。",
+    "preparation": "createMockL3([])\nallocator.allocate() × 2\nbefore = maxAllocated()",
+    "assertion": "executeIntent 后 maxAllocated() === before",
+    "note": "executeIntent 不涉及 argtmp——槽位全由 compiler 层预留。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 18,
+    "title": "id / parentIntentId / createdAt",
+    "slug": "entry-basic-fields",
+    "kind": "positive",
+    "purpose": "三个基础标识字段在 createIntentEntry 时各自正确填充。",
+    "preparation": "createIntentEntry({type:'test',params:{}})",
+    "assertion": "entry.id 已定义\nentry.parentIntentId === null\nentry.createdAt > > > 0",
+    "note": "基础字段完整性。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 19,
+    "title": "intent 字段：type + params",
+    "slug": "entry-intent-fields",
+    "kind": "positive",
+    "purpose": "intent 复合字段（type + params）正确落地，嵌套 params 也保留。",
+    "preparation": "createIntentEntry({type:'complex_intent', params:{x:1, y:'hello', z:{nested:true}}})",
+    "assertion": "intent.type === 'complex_intent'\nparams.x === 1\nparams.y === 'hello'",
+    "note": "复合字段透传——嵌套 params 不丢。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 20,
+    "title": "是 Error 子类",
+    "slug": "error-identity",
+    "kind": "neutral",
+    "purpose": "配套错误类的 name/message/instanceof Error 三项基本身份属性。",
+    "preparation": "new ExecuteIntentError('test')",
+    "assertion": "err instanceof Error\nerr.name === 'ExecuteIntentError'\nerr.message === 'test'",
+    "note": "sanity check——三项缺一不可。",
+    "view": "stack",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  }
+]

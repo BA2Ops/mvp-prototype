@@ -1,0 +1,22 @@
+@startuml
+title Test #11: source 不存在抛 AddressError
+
+object "Before" as ib {
+  internalStore:
+    $missing = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $missing = <still unset>
+}
+
+ib ..> ia : executeMove(\n  from={kind:'internal', name:'$missing'}\n  to  ={kind:'internal', name:'$r0'}\n) ✗ AddressError
+
+note right of ia
+  **验证**
+  rejects.toThrow(AddressError) ✓
+  错误源：resolve 阶段读不到 key
+end note
+
+@enduml

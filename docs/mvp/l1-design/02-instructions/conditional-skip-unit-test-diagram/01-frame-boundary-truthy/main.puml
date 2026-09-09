@@ -1,0 +1,29 @@
+@startuml
+title Test #1: 条件为真且 n 足够大 → 停在帧前
+
+object "Before\nstate.stack" as stack_b {
+  [0]  frame(IE)
+  [1]  m1
+  [top] self
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  $r_flag = true
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(stack.map(e=>e.id)).toEqual(['frame'])
+end note
+
+@enduml

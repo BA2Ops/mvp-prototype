@@ -1,0 +1,31 @@
+@startuml
+title Test #5: public → public（业务变量重命名）
+
+object "Before" as ib {
+  publicStore:
+    old_name = "data"
+    new_name = <unset>
+}
+
+object "After" as ia {
+  publicStore:
+    old_name = "data" (unchanged)
+    new_name = "data"
+}
+
+ib ..> ia : executeMove(\n  from={kind:'public', name:'old_name'}\n  to  ={kind:'public', name:'new_name'}\n)
+
+note right of ib
+  **前置**
+  publicStore.set('old_name', 'data')
+  **关键**
+  验证 old_name 仍存在
+end note
+
+note right of ia
+  **验证（两条都必）**
+  publicStore.get('old_name') === 'data' ✓
+  publicStore.get('new_name') === 'data' ✓
+end note
+
+@enduml

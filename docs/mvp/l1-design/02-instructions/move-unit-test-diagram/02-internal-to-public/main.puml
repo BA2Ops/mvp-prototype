@@ -1,0 +1,31 @@
+@startuml
+title Test #2: internal → public（寄存器保存到业务）
+
+object "Before" as ib {
+  internalStore:
+    $r0 = "result_data"
+  publicStore:
+    output_content = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = "result_data" (unchanged)
+  publicStore:
+    output_content = "result_data"
+}
+
+ib ..> ia : executeMove(\n  from={kind:'internal', name:'$r0'}\n  to  ={kind:'public',   name:'output_content'}\n)
+
+note right of ib
+  **前置**
+  internalStore.set('$r0', 'result_data')
+end note
+
+note right of ia
+  **验证**
+  publicStore.get('output_content')
+    === 'result_data' ✓
+end note
+
+@enduml

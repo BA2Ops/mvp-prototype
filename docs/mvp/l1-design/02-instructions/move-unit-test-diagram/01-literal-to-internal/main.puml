@@ -1,0 +1,26 @@
+@startuml
+title Test #1: literal → internal（常量加载到寄存器）
+
+object "Before\nstate.internalStore" as ib {
+  $r0 = <unset>
+}
+
+object "After\nstate.internalStore" as ia {
+  $r0 = "hello"
+}
+
+ib ..> ia : executeMove(\n  from={kind:'literal', value:'hello'}\n  to  ={kind:'internal', name:'$r0'}\n)
+
+note right of ib
+  **前置**
+  literal 自带 value
+  无需预置 state
+end note
+
+note right of ia
+  **验证**
+  internalStore.get('$r0')
+    === 'hello' ✓
+end note
+
+@enduml

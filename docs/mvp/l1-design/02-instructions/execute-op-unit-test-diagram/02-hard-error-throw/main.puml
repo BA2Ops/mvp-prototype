@@ -1,0 +1,29 @@
+@startuml
+title Test #2: 调用 throwing_op 应抛错（硬错误）
+
+object "Before" as b {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  [top] (length=1)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ Error thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  rejects.toThrow('hard error')
+end note
+
+@enduml

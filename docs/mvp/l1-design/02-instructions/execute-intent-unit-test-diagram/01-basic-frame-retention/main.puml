@@ -1,0 +1,29 @@
+@startuml
+title Test #1: 调用 L3.compile，children 压入帧之上（帧保留）
+
+object "Before\nstate.stack" as stack_b {
+  [top] entry
+}
+object "After\nstate.stack" as stack_a {
+  [0]  entry
+  [1]  c2
+  [top] c1
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : L3.compile([c1, c2])\n逆序压栈
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → awaiting_children
+  **验证**
+  stack.length === 3
+end note
+
+@enduml

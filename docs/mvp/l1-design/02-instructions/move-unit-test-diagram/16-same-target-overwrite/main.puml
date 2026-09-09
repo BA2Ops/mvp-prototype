@@ -1,0 +1,23 @@
+@startuml
+title Test #16: 同名寄存器覆盖
+
+object "Before\nstate.internalStore" as sb {
+  $r0 = v1 / v2 (mutable)
+  $r1 = <unset>
+}
+
+object "After\nstate.internalStore" as sa {
+  $r0 = "v2"   ← 第二次 source
+  $r1 = "v2"   ← 仅保留最后一次
+}
+
+sb ..> sa : Round 1: $r0=v1 → $r1\nRound 2: $r0=v2 → $r1 (覆盖)
+
+note right of sa
+  **验证（仅一条核心断言）**
+  internalStore.get('$r1') === 'v2' ✓
+  第二次写入完全覆盖第一次
+  （不允许两份数据并存）
+end note
+
+@enduml

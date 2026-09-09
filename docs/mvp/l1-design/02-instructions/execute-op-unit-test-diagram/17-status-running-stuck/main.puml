@@ -1,0 +1,29 @@
+@startuml
+title Test #17: 硬错误：pending → running（保持，因为 throw 后未到 done）
+
+object "Before" as b {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+object "After" as a {
+  state.stack:
+  (empty)
+  state.internalStore:
+  (empty)
+  state.publicStore:
+  (empty)
+}
+
+b -[#red]right-> a : ✗ Error thrown thrown
+note right of b : entry.status: pending\n(unchanged — failure path keeps stack)
+note right of a
+  **验证**
+  初始 status==='pending'
+end note
+
+@enduml

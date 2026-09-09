@@ -1,0 +1,31 @@
+@startuml
+title Test #4: internal → internal（寄存器重命名）
+
+object "Before" as ib {
+  internalStore:
+    $r0 = "value"
+    $r1 = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = "value" (unchanged)
+    $r1 = "value"
+}
+
+ib ..> ia : executeMove(\n  from={kind:'internal', name:'$r0'}\n  to  ={kind:'internal', name:'$r1'}\n)
+
+note right of ib
+  **前置**
+  internalStore.set('$r0', 'value')
+  **关键**
+  验证 $r0 保持原值
+end note
+
+note right of ia
+  **验证（两条都必）**
+  internalStore.get('$r0') === 'value' ✓
+  internalStore.get('$r1') === 'value' ✓
+end note
+
+@enduml

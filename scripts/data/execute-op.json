@@ -1,0 +1,604 @@
+[
+  {
+    "n": 1,
+    "title": "调用 mock_op：x → x*2",
+    "slug": "basic-mock-op",
+    "kind": "positive",
+    "purpose": "最基础的端到端：读 inputs → 调 handler → 写 outputs → 标 done → 弹栈。",
+    "preparation": "internalStore.set('$r0', 5)\nentry=mock_op(inputs:{x:$r0}, outputs:{result:$r1})",
+    "assertion": "$r1 === 10\ntracker.getCallCount() === 1\ncalls[0].inputs.x === 5\nentry.status === 'done'\nstack.length === 0",
+    "note": "execute_op 最常见的 happy path——五件事一气呵成。",
+    "view": "register",
+    "state": {
+      "stack_before": [
+        "move_entry"
+      ],
+      "stack_after": [],
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": {
+        "$r0": "5",
+        "$r1": "10"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    },
+    "action": "mock_op(x=5) → 10"
+  },
+  {
+    "n": 2,
+    "title": "调用 throwing_op 应抛错（硬错误）",
+    "slug": "hard-error-throw",
+    "kind": "negative",
+    "purpose": "硬错误路径：handler 直接 throw → 异常上抛 → entry.status 停在 running。",
+    "preparation": "entry=throwing_op(inputs:{}, outputs:{})",
+    "assertion": "rejects.toThrow('hard error')\nentry.status === 'running'\nstack.length === 1（不弹栈）",
+    "note": "status='running' 表明'正在执行但未完成'——设计选择。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": [
+        "(length=1)"
+      ],
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "running",
+      "error": "Error"
+    }
+  },
+  {
+    "n": 3,
+    "title": "多个 inputs",
+    "slug": "multi-inputs",
+    "kind": "positive",
+    "purpose": "自定义可编程 op 验证多 input 同时读取与单 output 写入。",
+    "preparation": "createProgrammableOp({name:'double_add', inputs:{a:$r0, b:$r1}, outputs:{sum:$r2}}, behavior:{kind:'return', outputs:{sum:99}})",
+    "assertion": "$r2 === 99\nentry.status === 'done'",
+    "note": "验证 inputs 是全量读取而非首读即返。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": {
+        "$rr2": "99"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 4,
+    "title": "多个 outputs",
+    "slug": "multi-outputs",
+    "kind": "positive",
+    "purpose": "自定义可编程 op 验证单 input 同时写入多 output。",
+    "preparation": "createProgrammableOp({name:'multi_out', inputs:{x:$r0}, outputs:{out1:$r1, out2:$r2}}, behavior:{kind:'return', outputs:{out1:100, out2:200}})",
+    "assertion": "$r1 === 100\n$r2 === 200",
+    "note": "验证 outputs 是全量写入而非首写即返。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": {
+        "$rr1": "100",
+        "$rr2": "200"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 5,
+    "title": "literal input 抛 ExecuteOpError",
+    "slug": "addr-input-literal",
+    "kind": "negative",
+    "purpose": "非法 kind 第一种。",
+    "preparation": "inputs:{x:{kind:'literal', value:5} as any}\noutputs 合法",
+    "assertion": "rejects.toThrow(ExecuteOpError)\nrejects.toThrow(/input 'x' must be internal/)",
+    "note": "双断言——类型对 + 错误消息含 'input x must be internal'。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 6,
+    "title": "public input 抛错",
+    "slug": "addr-input-public",
+    "kind": "negative",
+    "purpose": "非法 kind 第二种：验证按'是否 internal'二元分类。",
+    "preparation": "inputs:{x:{kind:'public', name:'business_var'} as any}",
+    "assertion": "rejects.toThrow(ExecuteOpError)",
+    "note": "拦的是'只枚举几个常见敌人'的不彻底防御。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 7,
+    "title": "file input 抛错",
+    "slug": "addr-input-file",
+    "kind": "negative",
+    "purpose": "非法 kind 第三种：即便 file 已从 Address union 移除，运行期仍独立识别。",
+    "preparation": "inputs:{x:{kind:'file', path:'/tmp/x'} as any}",
+    "assertion": "rejects.toThrow(ExecuteOpError)",
+    "note": "用 as any 绕过 TS——验证运行时独立判断逻辑。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 8,
+    "title": "literal output 抛 ExecuteOpError",
+    "slug": "addr-output-literal",
+    "kind": "negative",
+    "purpose": "非法 output kind 第一种。",
+    "preparation": "$r0=5\noutputs:{result:{kind:'literal', value:0} as any}\ninputs 合法",
+    "assertion": "rejects.toThrow(ExecuteOpError)\nrejects.toThrow(/output 'result' must be internal/)",
+    "note": "output 端独立白名单——与 input 端镜像。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 9,
+    "title": "public output 抛错",
+    "slug": "addr-output-public",
+    "kind": "negative",
+    "purpose": "非法 output kind 第二种。",
+    "preparation": "outputs:{result:{kind:'public', name:'business_var'} as any}",
+    "assertion": "rejects.toThrow(ExecuteOpError)",
+    "note": "拦的是'output 端忘记对称校验'的实现疏漏。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 10,
+    "title": "未注册的 op 抛 ExecuteOpError",
+    "slug": "op-unregistered",
+    "kind": "negative",
+    "purpose": "registry lookup 失败的错误路径与消息内容锚定。",
+    "preparation": "entry=createOpEntry('nonexistent_op',{},{})",
+    "assertion": "rejects.toThrow(ExecuteOpError)\nrejects.toThrow(/not registered/)",
+    "note": "message 含 'not registered'——上层可差异化处理。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "ExecuteOpError"
+    }
+  },
+  {
+    "n": 11,
+    "title": "throwing_op 在 registry 中能找到",
+    "slug": "op-registered-sanity",
+    "kind": "neutral",
+    "purpose": "配套 sanity check：确认 mockL2 已注册该 op。",
+    "preparation": "直接 state.l2.has('throwing_op') 等",
+    "assertion": "state.l2.has('throwing_op') === true\nstate.l2.has('mock_op') === true",
+    "note": "确保 #2 抛错是来自执行而非注册缺失。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 12,
+    "title": "op 返回 error → 写入 $r_err 寄存器",
+    "slug": "error-as-data-write",
+    "kind": "positive",
+    "purpose": "错误即数据：handler 返回 {error: OperationError} → 写入 $r_err，result 落 null，不中断。",
+    "preparation": "createProgrammableOp({name:'failing_op', outputs:{result:$r1, error:$r_err}}, behavior:{kind:'returnError', code:'ENOENT'})\n$r0=5",
+    "assertion": "resolves.not.toThrow()\n$r_err.code === 'ENOENT'\n$r_err.op === 'failing_op'\n$r1 === null\nentry.status === 'done'",
+    "note": "错误即数据：handler 返回 {error: OperationError} → 写入 $r_err，result 落 null，不中断。error-as-data 主路径——错误作为数据流通而非异常中断。",
+    "view": "register",
+    "state": {
+      "stack_before": [
+        "op_entry"
+      ],
+      "stack_after": [
+        "op_entry"
+      ],
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": {
+        "$r0": "5",
+        "$r1": "null",
+        "$r_err": "{ENOENT}"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    },
+    "action": "failing_op()\n→ error-as-data"
+  },
+  {
+    "n": 13,
+    "title": "多次执行：$r_err 被后一次 op 覆盖（last-wins）",
+    "slug": "error-last-wins",
+    "kind": "negative",
+    "purpose": "$r_err 作为单例全局功能寄存器，验证 last-wins 语义。",
+    "preparation": "连续两次执行 err_op_1 (E_FIRST) 与 err_op_2 (E_SECOND)",
+    "assertion": "第一次后 $r_err.code === 'E_FIRST'\n第二次覆盖后 $r_err.code === 'E_SECOND'",
+    "note": "global functional register 单例——后写覆盖前写。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 14,
+    "title": "op throw 时向上抛（不写入 outputs）",
+    "slug": "throw-no-write-outputs",
+    "kind": "negative",
+    "purpose": "handler throw 不进入 write 阶段，原异常上抛；outputs 保持未写入。",
+    "preparation": "entry=throwing_op(outputs:{result:$r1})",
+    "assertion": "rejects.toThrow(/hard error/)\ninternalStore.has('$r1') === false",
+    "note": "硬错误路径关键不变量：throw 在 write 之前。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "Error"
+    }
+  },
+  {
+    "n": 15,
+    "title": "自定义 throw 的 Error 向上抛",
+    "slug": "throw-custom-error",
+    "kind": "negative",
+    "purpose": "任意 Error 实例（含 message）都能原样透传。",
+    "preparation": "createProgrammableOp({name:'custom_throw'}, behavior:{kind:'throw', error:new Error('custom hard error')})",
+    "assertion": "rejects.toThrow('custom hard error')",
+    "note": "验证 throw 路径不修改 Error 实例（无 wrap）。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "pending (failure path)",
+      "error": "Error"
+    }
+  },
+  {
+    "n": 16,
+    "title": "成功：pending → running → done",
+    "slug": "status-success",
+    "kind": "positive",
+    "purpose": "正常完成路径下 status 三阶段推进轨迹。",
+    "preparation": "entry=mock_op + $r0=5",
+    "assertion": "初始 status==='pending'\n执行后 status==='done'",
+    "note": "status 字段是 main-loop 路由依据——需正确推进。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 17,
+    "title": "硬错误：pending → running（保持，因为 throw 后未到 done）",
+    "slug": "status-running-stuck",
+    "kind": "negative",
+    "purpose": "硬错误路径下 status 在 catch 之前已置为 running 且不再推进。",
+    "preparation": "entry=throwing_op + try/catch 包裹 await",
+    "assertion": "初始 status==='pending'\n执行后 status==='running'",
+    "note": "'running' 表示'正在执行但未完成'——throw 后未推进到 done。",
+    "view": "error",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "running",
+      "error": null
+    }
+  },
+  {
+    "n": 18,
+    "title": "完整流程：literal 5 → move → $r0 → mock_op → $r1",
+    "slug": "flow-with-move",
+    "kind": "positive",
+    "purpose": "模拟 move 把 literal 5 搬到 $r0 后 op 读取。",
+    "preparation": "预先 internalStore.set('$r0', 5) 模拟 move\nentry=mock_op",
+    "assertion": "$r1 === 10",
+    "note": "跨 primitive 最小集成——move 提供数据、op 消费数据。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": {
+        "$rr1": "10"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 19,
+    "title": "后续可读 op 的 output 做下一轮 op 的 input",
+    "slug": "flow-pipeline",
+    "kind": "positive",
+    "purpose": "多轮流水线：round 1 output 作为 round 2 input。",
+    "preparation": "op1: 5 → $r1=10\nop2: 10 → $r3=20",
+    "assertion": "完成后 $r3 === 20（即 10*2）",
+    "note": "流水线场景——验证 outputs 可以立即作为下一轮 inputs。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r1": "10",
+        "$r3": "20"
+      },
+      "int_after": {
+        "$rr3": "20（即"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 20,
+    "title": "连续 3 次调用同一 op",
+    "slug": "consecutive-three",
+    "kind": "positive",
+    "purpose": "多次连续调用计数与各自 output 正确写入。",
+    "preparation": "i ∈ [1,3]: set $r0=i, entry=mock_op(outputs.result=`$r${i+1}`)",
+    "assertion": "tracker.getCallCount() === 3\n$r2 === 2, $r3 === 4, $r4 === 6",
+    "note": "同一 op 多次调用——tracker 累计 + outputs 各次独立写入。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "i"
+      },
+      "int_after": {
+        "$rr4": "6"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 21,
+    "title": "tracker 记录每个调用的 inputs",
+    "slug": "tracker-records-inputs",
+    "kind": "positive",
+    "purpose": "tracker 应按调用顺序记录每次的 inputs 实际值（非引用）。",
+    "preparation": "三次 entry 分别 inputs.x=10/20/30",
+    "assertion": "calls.length === 3\ncalls[0..2].inputs.x === 10/20/30",
+    "note": "inputs 是值快照而非延迟求值引用。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 22,
+    "title": "不动 publicStore",
+    "slug": "state-preserve-publicstore",
+    "kind": "neutral",
+    "purpose": "execute_op 不应触碰业务存储区。",
+    "preparation": "publicStore.set('business_data','preserve')\n$r0=5\nentry=mock_op",
+    "assertion": "publicStore.get('business_data') === 'preserve'",
+    "note": "基线 check——execute_op 只动 internalStore 与 entry.status。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "5"
+      },
+      "int_after": null,
+      "pub_before": {
+        "business_data": "preserve"
+      },
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 23,
+    "title": "不动 allocator",
+    "slug": "state-preserve-allocator",
+    "kind": "neutral",
+    "purpose": "execute_op 期间不分配任何 argtmp 槽位。",
+    "preparation": "allocator.allocate() × 2\nbefore = maxAllocated()\nentry=mock_op",
+    "assertion": "maxAllocated() === before",
+    "note": "execute_op 不涉及 argtmp 分配——槽位全由 compiler 层预留。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 24,
+    "title": "不动其他内部寄存器",
+    "slug": "state-preserve-other-internal",
+    "kind": "neutral",
+    "purpose": "execute_op 不应改写未涉及的内部寄存器。",
+    "preparation": "internalStore.set('$r_other','preserve')\n$r0=5\nentry=mock_op",
+    "assertion": "$r_other === 'preserve'",
+    "note": "only outputs 引用的寄存器被改写——其他不动。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": {
+        "$r0": "5",
+        "$r_other": "preserve"
+      },
+      "int_after": {
+        "$rr_other": "preserve"
+      },
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  },
+  {
+    "n": 25,
+    "title": "是 Error 子类",
+    "slug": "error-identity",
+    "kind": "neutral",
+    "purpose": "配套错误类的 name/message/instanceof Error 三项基本身份。",
+    "preparation": "new ExecuteOpError('test')",
+    "assertion": "err instanceof Error\nerr.name === 'ExecuteOpError'\nerr.message === 'test'",
+    "note": "sanity check——三项缺一不可。",
+    "view": "register",
+    "state": {
+      "stack_before": null,
+      "stack_after": null,
+      "int_before": null,
+      "int_after": null,
+      "pub_before": null,
+      "pub_after": null,
+      "entry_before": "pending",
+      "entry_after": "done",
+      "error": null
+    }
+  }
+]

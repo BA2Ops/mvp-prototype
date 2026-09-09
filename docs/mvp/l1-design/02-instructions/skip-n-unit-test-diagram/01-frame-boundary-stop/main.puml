@@ -1,0 +1,30 @@
+@startuml
+title Test #1: 弹出时遇到帧 → 停止（不跨帧）
+
+object "Before\nstate.stack" as stack_b {
+  [0]  frame(IE)
+  [1]  m1
+  [2]  m2
+  [top] self
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : executeSkipN(skip, state)\n弹出 self + 后续（受帧边界拦截）
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(stack.map(e=>e.id)).toEqual(['frame'])
+end note
+
+@enduml

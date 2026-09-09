@@ -1,0 +1,25 @@
+@startuml
+title Test #8: 数组和对象
+
+object "Before" as ib {
+  internalStore:
+    $r0 = <unset>
+    $r1 = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = [1, 2, 3]
+    $r1 = {a: 1}
+}
+
+ib ..> ia : executeMove ①\n  literal[1,2,3] → $r0\n→ executeMove ②\n  literal{a:1} → $r1\n
+
+note right of ia
+  **验证（两条都必）**
+  toEqual([1, 2, 3]) ✓
+  toEqual({ a: 1 }) ✓
+  （深层结构相等）
+end note
+
+@enduml

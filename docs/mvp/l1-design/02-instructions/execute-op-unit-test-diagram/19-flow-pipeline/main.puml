@@ -1,0 +1,28 @@
+@startuml
+title Test #19: 后续可读 op 的 output 做下一轮 op 的 input
+
+object "Before\nstate.internalStore" as int_b {
+  $r1 = 10
+  $r3 = 20
+}
+object "After\nstate.internalStore" as int_a {
+  $rr3 = 20（即
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : execute(entry, state)
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  完成后 $r3 === 20（即 10*2）
+end note
+
+@enduml

@@ -1,0 +1,22 @@
+@startuml
+title Test #12: source public 不存在抛错
+
+object "Before" as ib {
+  publicStore:
+    missing = <unset>
+}
+
+object "After" as ia {
+  publicStore:
+    missing = <still unset>
+}
+
+ib ..> ia : executeMove(\n  from={kind:'public', name:'missing'}\n  to  ={kind:'internal', name:'$r0'}\n) ✗ AddressError
+
+note right of ia
+  **验证**
+  rejects.toThrow(AddressError) ✓
+  与 #11 对称：public 区走相同路径
+end note
+
+@enduml

@@ -1,0 +1,22 @@
+@startuml
+title Test #7: null
+
+object "Before" as ib {
+  internalStore:
+    $r0 = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = null
+}
+
+ib ..> ia : executeMove(\n  from={kind:'literal', value:null}\n  to  ={kind:'internal', name:'$r0'}\n)
+
+note right of ia
+  **验证**
+  internalStore.get('$r0') === null ✓
+  （显式 null，不是 undefined）
+end note
+
+@enduml

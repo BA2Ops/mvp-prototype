@@ -1,0 +1,31 @@
+@startuml
+title Test #27: 连续两个 conditional_skip
+
+object "Before\nstate.stack" as stack_b {
+  [0]  cond1($r_a
+  [1]  n=0)
+  [2]  cond2($r_b
+  [top] n=0)
+}
+object "After\nstate.stack" as stack_a {
+  [top] (length=1)
+}
+object "Before\nstate.internalStore" as int_b {
+  $r_a = true
+  $r_b = false
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  先 pop cond2 falsy → stack.length===1
+end note
+
+@enduml

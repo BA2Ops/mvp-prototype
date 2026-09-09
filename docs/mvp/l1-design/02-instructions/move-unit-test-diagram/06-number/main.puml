@@ -1,0 +1,22 @@
+@startuml
+title Test #6: 数字
+
+object "Before" as ib {
+  internalStore:
+    $r0 = <unset>
+}
+
+object "After" as ia {
+  internalStore:
+    $r0 = 42
+}
+
+ib ..> ia : executeMove(\n  from={kind:'literal', value:42}\n  to  ={kind:'internal', name:'$r0'}\n)
+
+note right of ia
+  **验证**
+  internalStore.get('$r0') === 42 ✓
+  （toBe 严格全等，非 toEqual）
+end note
+
+@enduml

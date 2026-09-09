@@ -1,0 +1,22 @@
+@startuml
+title Subfigure: #24 DAG 错误主路径时序
+
+participant file_read as FR
+participant cond_skip as CS
+participant elseBlock as EB
+participant thenBlock as TB
+database "$r_err" as ERR
+
+FR -> ERR : set(ENOENT, ...)
+note right of ERR : OperationError 结构
+
+CS -> ERR : read $r_err
+ERR --> CS : truthy (non-empty obj)
+CS -> CS : pop self
+CS -> EB : pop elseBlock (n=2)
+CS -> EB : pop skipN (n=2)
+
+note over TB : stack 剩 [thenBlock]
+TB -> TB : 执行 then_block
+
+@enduml

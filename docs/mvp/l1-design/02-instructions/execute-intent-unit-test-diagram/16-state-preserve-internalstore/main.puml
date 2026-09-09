@@ -1,0 +1,28 @@
+@startuml
+title Test #16: 不动 internalStore
+
+object "Before\nstate.stack" as stack_b {
+  (empty)
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  $r0 = preserve
+  $r_err = null
+}
+object "After\nstate.internalStore" as int_a {
+  $rr0 = preserve
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  $r0 === 'preserve'
+end note
+
+@enduml

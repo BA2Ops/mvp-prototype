@@ -1,0 +1,29 @@
+@startuml
+title Test #12: op 返回 error → 写入 $r_err 寄存器
+
+object "Before\nstate.internalStore" as int_b {
+  $r0 = 5
+}
+object "After\nstate.internalStore" as int_a {
+  $r0 = 5
+  $r1 = null
+  $r_err = {ENOENT}
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : failing_op()\n→ error-as-data
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  resolves.not.toThrow()
+end note
+
+@enduml

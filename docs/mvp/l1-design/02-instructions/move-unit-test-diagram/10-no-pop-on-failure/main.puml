@@ -1,0 +1,21 @@
+@startuml
+title Test #10: 失败时不弹栈
+
+object "Before\nstate.stack (length=1)" as sb {
+  [0] move entry
+}
+
+object "After\nstate.stack (length=1)" as sa {
+  [0] move entry (unchanged)
+}
+
+sb ..> sa : executeMove(entry)\n  ✗ AddressError thrown\n  ↑ entry 原地保留
+
+note right of sa
+  **验证（两条都必）**
+  rejects.toThrow() ✓
+  stack.length 仍 === 1 ✓
+  （拦的是"反正报错了顺手清栈"）
+end note
+
+@enduml

@@ -1,0 +1,27 @@
+@startuml
+title Test #20: 连续 3 次调用同一 op
+
+object "Before\nstate.internalStore" as int_b {
+  $r0 = i
+}
+object "After\nstate.internalStore" as int_a {
+  $rr4 = 6
+}
+object "Before\nstate.publicStore" as pub_b {
+  (empty)
+}
+object "After\nstate.publicStore" as pub_a {
+  (empty)
+}
+
+int_b ..> int_a : execute(entry, state)
+pub_b ..> pub_a : (业务数据持久化)
+
+
+note right of int_a
+  entry.status: pending → done
+  **验证**
+  tracker.getCallCount() === 3
+end note
+
+@enduml

@@ -1,0 +1,21 @@
+@startuml
+title Test #13: 写入 literal 抛错（设计约束）
+
+object "Before" as ib {
+  literal node (read-only)
+}
+
+object "After" as ia {
+  (no change)
+}
+
+ib ..> ia : executeMove(\n  from={kind:'literal', value:'x'}\n  to  ={kind:'literal', value:'y'}\n) ✗ AddressError /literal/
+
+note right of ia
+  **验证（连续两步）**
+  rejects.toThrow(AddressError) ✓
+  rejects.toThrow(/literal/) ✓
+  （literal 是只读常量节点）
+end note
+
+@enduml

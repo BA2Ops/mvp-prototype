@@ -1,0 +1,27 @@
+@startuml
+title Test #30: 不动 allocator
+
+object "Before\nstate.stack" as stack_b {
+  [top] cond
+}
+object "After\nstate.stack" as stack_a {
+  (empty)
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : execute(entry, state)
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → done
+  **验证**
+  expect(allocator.maxAllocated()).toBe(before)
+end note
+
+@enduml

@@ -1,0 +1,32 @@
+@startuml
+title Test #13: DAG if-then-else 编译产物正确压栈
+
+object "Before\nstate.stack" as stack_b {
+  [top] entry
+}
+object "After\nstate.stack" as stack_a {
+  [0]  entry
+  [1]  op_write
+  [2]  sn
+  [3]  op_move
+  [4]  cs
+  [top] op_file_read
+}
+object "Before\nstate.internalStore" as int_b {
+  (empty)
+}
+object "After\nstate.internalStore" as int_a {
+  (empty)
+}
+
+stack_b ..> stack_a : L3.compile 5 步 children\n逆序压栈
+int_b ..> int_a : (resolve + write)
+
+
+note right of stack_a
+  entry.status: pending → awaiting_children
+  **验证**
+  stack=[entry, op_write, sn, op_move, cs, op_file_read]
+end note
+
+@enduml
