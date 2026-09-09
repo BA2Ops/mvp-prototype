@@ -1,0 +1,40 @@
+<experience id="search_in_files" description="在文件/目录中搜索内容(字面量或正则),返回匹配列表。">
+  <inputs>
+    <param name="pattern" type="string" required=""/>
+    <param name="path" type="path" required=""/>
+  </inputs>
+  <outputs>
+    <param name="matches" type="object" required=""/>
+    <param name="count" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="grep" opName="grep_search">
+      <inputs>
+        <input name="pattern" fromInput="pattern"/>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="matches" as="$r_matches"/>
+        <output name="count" as="$r_count"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="grep 搜索" response="搜索完成:{pattern} 在 {path} 中共 {count} 处匹配">
+      <steps>
+        <step node="grep"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="matches" register="$r_matches" type="object" persist=""/>
+  </outputBindings>
+  <metadata category="search" sideEffects="read-only" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>search</tag>
+      <tag>grep</tag>
+    </tags>
+  </metadata>
+</experience>

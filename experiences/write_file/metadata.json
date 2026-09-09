@@ -1,0 +1,14 @@
+{
+  "id": "write_file",
+  "description": "把内容写入文件(覆盖)。",
+  "tags": [
+    "file",
+    "write"
+  ],
+  "category": "file-io",
+  "sideEffects": "fs-write",
+  "version": "1.0.0",
+  "createdAt": 1788945789317,
+  "updatedAt": 1788945789317,
+  "status": "active"
+}

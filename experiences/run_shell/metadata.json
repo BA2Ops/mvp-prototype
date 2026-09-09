@@ -1,0 +1,14 @@
+{
+  "id": "run_shell",
+  "description": "执行外部命令(execFile 语义),返回 stdout/stderr/exit_code。",
+  "tags": [
+    "shell",
+    "exec"
+  ],
+  "category": "shell",
+  "sideEffects": "exec",
+  "version": "1.0.0",
+  "createdAt": 1788945789334,
+  "updatedAt": 1788945789334,
+  "status": "active"
+}

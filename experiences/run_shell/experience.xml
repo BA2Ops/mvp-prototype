@@ -1,0 +1,40 @@
+<experience id="run_shell" description="执行外部命令(execFile 语义),返回 stdout/stderr/exit_code。">
+  <inputs>
+    <param name="command" type="string" required=""/>
+    <param name="args" type="object" default=""/>
+  </inputs>
+  <outputs>
+    <param name="stdout" type="string" required=""/>
+    <param name="exit_code" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="exec" opName="shell_exec">
+      <inputs>
+        <input name="command" fromInput="command"/>
+        <input name="args" fromInput="args"/>
+      </inputs>
+      <outputs>
+        <output name="stdout" as="$r_stdout"/>
+        <output name="stderr" as="$r_stderr"/>
+        <output name="exit_code" as="$r_exit"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="执行命令" response="命令执行完成(退出码 {exit}),stdout 见 stdout 字段">
+      <steps>
+        <step node="exec"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="stdout" register="$r_stdout" type="string" persist=""/>
+  </outputBindings>
+  <metadata category="shell" sideEffects="exec" version="1.0.0">
+    <tags>
+      <tag>shell</tag>
+      <tag>exec</tag>
+    </tags>
+  </metadata>
+</experience>

@@ -1,0 +1,48 @@
+<experience id="read_file_with_default" description="读取文件内容;文件不存在(ENOENT)时返回默认内容。意外异常也在此截获。" handleError>
+  <inputs>
+    <param name="path" type="path" required=""/>
+    <param name="default_content" type="string" required=""/>
+  </inputs>
+  <outputs>
+    <param name="content" type="string" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="try_read" opName="file_read">
+      <inputs>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="content" as="$r_content"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="set_default" opName="evaluate_expr">
+      <inputs>
+        <input name="expr" fromInput="default_content"/>
+      </inputs>
+      <outputs>
+        <output name="result" as="$r_content"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <conditionNode id="is_enoent" varName="$r_err" condition="truthy" thenPath="use_default" elsePath="normal"/>
+  </nodes>
+  <paths>
+    <path id="use_default" description="文件不存在 → 用默认内容" response="文件 {path} 不存在,已使用默认内容">
+      <steps>
+        <step node="set_default"/>
+      </steps>
+    </path>
+    <path id="normal" description="读取成功 → content 已在 $r_content" response="已读取 {path} 的内容"/>
+  </paths>
+  <outputBindings>
+    <binding name="content" register="$r_content" type="string" persist=""/>
+  </outputBindings>
+  <metadata category="file-io" sideEffects="read-only" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>read</tag>
+      <tag>default</tag>
+    </tags>
+  </metadata>
+</experience>

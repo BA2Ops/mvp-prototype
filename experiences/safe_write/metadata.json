@@ -1,0 +1,15 @@
+{
+  "id": "safe_write",
+  "description": "安全写入:目标文件已存在时跳过(不覆盖),否则写入。",
+  "tags": [
+    "file",
+    "write",
+    "safe"
+  ],
+  "category": "file-io",
+  "sideEffects": "fs-write",
+  "version": "1.0.0",
+  "createdAt": 1788945789321,
+  "updatedAt": 1788945789321,
+  "status": "active"
+}

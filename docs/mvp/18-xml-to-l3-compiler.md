@@ -36,8 +36,8 @@
 > |---|---|---|
 > | 经验输入参数 path | Step 0 输入绑定 | $r_input_path |
 > | 常量 'foo' | sidecar move | $r_argtmp_N |
-> | 节点输出 content | outputs 地址绑定 | $r_content |
-> | 连接 B.text ← A.content | 下游 inputs 指向上游 outputs 寄存器 | $r_text ← $r_content |
+> | 节点输出 content | op 执行后 move 物理输出槽 → 业务变量 | $r_content |
+> | 连接 B.text ← A.content | A 输出 move 到 $r_content,B 输入从 $r_content move 到 B 的物理输入槽 | $r_content（业务变量区中转）|
 >
 > 其余补全（分支骨架计算、汇聚落点、回环结构）都是这张映射表
 > 在控制流场景下的延伸应用。

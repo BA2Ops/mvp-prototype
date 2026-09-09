@@ -134,21 +134,20 @@ export function resolveVar(
       return { resolved: true, registerName: name, reason: 'input' }
     }
   }
-  // 3. step output: $r_<X> (legacy) → $S<scopeId>.out<slotIndex>
-  //    注:experience.library 里 ref.name = '$r_<X>' 中 X 是 legacy 简称,
-  //    可能与 op formalSpec.outputs[businessName] 的 businessName 不同
-  //    (e.g. experience 用 '$r_bytes',op spec 用 'bytes_written')。
-  //    索引策略: outputsByName 同时索引 [aliasName, businessName]
-  //    P4/T-4.3: $r_* 名在 new path 下保持全局（与 expandRefs 一致），
-  //    不再 scope-prefix。formalSpec outputs 仍通过 slotIndex scope-prefix，
-  //    但当 ParamRef.name 是 $r_* 时，用原名。
+  // 3. step output: $r_<X> (业务变量名) → 业务变量名本身 (C6)
+  //    C6: $r_<name> 是业务变量名,不是物理寄存器名。
+  //    表达式通过 env map 从 internalStore[业务变量名] 读取值。
+  //    编译器在 op 执行后已生成 move(物理输出槽, 业务变量) 将值卸载到业务变量区。
+  //    P4/T-4.3: $r_* 名在 new path 下保持业务变量名（不 scope-prefix），
+  //    formalSpec outputs 仍通过 slotIndex scope-prefix，
+  //    但当 ParamRef.name 是 $r_* 时，用业务变量名。
   const legacyMatch = name.match(/^\$r_(.+)$/)
   if (legacyMatch) {
     const aliasName = legacyMatch[1]
     if (aliasName === 'err') {
       return { resolved: true, registerName: GLOBAL_ERR, reason: 'global' }
     }
-    // P4/T-4.3: $r_* 名 → 全局寄存器（原名），不 scope-prefix
+    // C6: $r_* 名 → 业务变量名（原名），表达式从业务变量区读取
     return { resolved: true, registerName: name, reason: 'literal-name' }
   }
   // 4. fallback: var.name == register name (legacy 兼容)

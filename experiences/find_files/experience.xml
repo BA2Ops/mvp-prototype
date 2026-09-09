@@ -1,0 +1,40 @@
+<experience id="find_files" description="按 glob 模式查找文件,返回路径列表。">
+  <inputs>
+    <param name="pattern" type="string" required=""/>
+    <param name="cwd" type="path" default="."/>
+  </inputs>
+  <outputs>
+    <param name="matches" type="object" required=""/>
+    <param name="count" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="glob" opName="glob_match">
+      <inputs>
+        <input name="pattern" fromInput="pattern"/>
+        <input name="cwd" fromInput="cwd"/>
+      </inputs>
+      <outputs>
+        <output name="matches" as="$r_matches"/>
+        <output name="count" as="$r_count"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="glob 匹配" response="共找到 {count} 个匹配 {pattern} 的文件">
+      <steps>
+        <step node="glob"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="matches" register="$r_matches" type="object" persist=""/>
+  </outputBindings>
+  <metadata category="search" sideEffects="read-only" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>search</tag>
+      <tag>glob</tag>
+    </tags>
+  </metadata>
+</experience>

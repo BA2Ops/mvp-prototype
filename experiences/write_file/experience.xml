@@ -1,0 +1,40 @@
+<experience id="write_file" description="把内容写入文件(覆盖)。">
+  <inputs>
+    <param name="path" type="path" required=""/>
+    <param name="content" type="string" required=""/>
+  </inputs>
+  <outputs>
+    <param name="bytes_written" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="write" opName="file_write">
+      <inputs>
+        <input name="path" fromInput="path"/>
+        <input name="content" fromInput="content"/>
+      </inputs>
+      <outputs>
+        <output name="bytes_written" as="$r_bytes"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="写入文件" response="已写入 {path}({bytes} 字节)">
+      <steps>
+        <step node="write"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="bytes_written" register="$r_bytes" type="number" persist=""/>
+  </outputBindings>
+  <failureMessages>
+    <message code="*" message="写入 {path} 失败:{err.message}"/>
+  </failureMessages>
+  <metadata category="file-io" sideEffects="fs-write" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>write</tag>
+    </tags>
+  </metadata>
+</experience>

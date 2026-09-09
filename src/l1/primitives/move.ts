@@ -51,6 +51,18 @@ export async function executeMove(
     state.stack.pop()
     return
   }
+  // C6: 输出卸载 move (物理输出槽 → 业务变量) 的 best-effort 处理。
+  // - op 抛硬错误时未写出物理输出槽($S<scope>.out<k>)
+  // - 编译器在 compileOp 生成的卸载 move 标记 bestEffort=true
+  // - 源缺失时跳过(错误已由 bubbleError 写入 $err),业务变量保持原值
+  if (
+    entry.bestEffort &&
+    entry.from.kind === 'internal' &&
+    !state.internalStore.has(entry.from.name)
+  ) {
+    state.stack.pop()
+    return
+  }
   const value = await resolveAddress(entry.from, state)
   await writeAddress(entry.to, value, state)
   state.stack.pop()

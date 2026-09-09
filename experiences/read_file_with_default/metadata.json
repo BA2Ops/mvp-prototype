@@ -1,0 +1,15 @@
+{
+  "id": "read_file_with_default",
+  "description": "读取文件内容;文件不存在(ENOENT)时返回默认内容。意外异常也在此截获。",
+  "tags": [
+    "file",
+    "read",
+    "default"
+  ],
+  "category": "file-io",
+  "sideEffects": "read-only",
+  "version": "1.0.0",
+  "createdAt": 1788945789309,
+  "updatedAt": 1788945789309,
+  "status": "active"
+}

@@ -611,29 +611,48 @@ function expandRefs(
       ref.kind === 'register' &&
       ref.name.startsWith('$r_')
     ) {
-      // CRR P4/T-4.3: $r_* 寄存器名在 new path 下保持全局（不 scope-prefix）
-      // 原因:大量经验依赖 $r_cur/$r_content/$r_bytes 等作为跨帧/跨经验全局寄存器，
-      // scope-prefixing 会破坏此机制。
-      addrs[name] = { kind: 'internal', name: ref.name }
-    } else if (
-      ctx.newPath &&
-      direction === 'in' &&
-      /^\$r_/.test(ref.name) &&
-      !(ref.name.startsWith('$S') || ref.name === '$err' || ref.name === '$path' || ref.name === '$r_err' || ref.name === '$r_path')
-    ) {
-      // CRR P3/T-D1-fix: intra-frame cross-op output 复用 —— input-side `{kind:'register',name:'$r_<X>'}`
-      // 应解析到写入该逻辑值的 op 的 OUT slot ($S<scope>.out<K>),而非当前 op 自身 INPUT slot
-      const aliasMatch = ref.name.match(/^\$r_(.+)$/)
-      let fp2: import('../l2/operation.js').FormalParam | undefined
-      if (aliasMatch) fp2 = ctx.outputsByAlias?.get(aliasMatch[1]) ?? ctx.outputsByAlias?.get(name)
-      if (!fp2) fp2 = spec!.inputs[name]
-      if (!fp2) {
+      // C6: $r_<name> 是业务变量名,不是物理寄存器名。
+      // 物理寄存器由 formalSpec.slotIndex 决定,对其他 op 不可见。
+      // 编译器生成 move 在业务变量区和物理寄存器之间搬运:
+      //   - direction='in':  move(业务变量, 物理输入槽)  (op 执行前装载)
+      //   - direction='out': move(物理输出槽, 业务变量)  (op 执行后卸载)
+      if (!spec) {
         throw new Error(
-          `L3 compile: op '${ctx.currentOpName ?? '?'}' register input '${name}'=${ref.name} — ` +
-          `no formalSpec for in.${name}, no matching earlier-step output, and not a global register`
+          `L3 compile: register ref '$r_${name}' in new path but no formalSpec available ` +
+          `(op '${ctx.currentOpName ?? '?'}')`
         )
       }
-      addrs[name] = { kind: 'internal', name: `$S${ctx.scopeId}.out${fp2.slotIndex}` }
+      const fp = (direction === 'in' ? spec.inputs : spec.outputs)[name]
+      if (!fp) {
+        throw new Error(
+          `L3 compile: op '${ctx.currentOpName ?? '?'}' has no formalSpec for ${direction}.${name} ` +
+          `(ParamRef '$r_*' points to non-existent slot)`
+        )
+      }
+      if (fp.slotIndex === 99) {
+        // ERROR_SLOT_INDEX → $err (全局,无需 move)
+        addrs[name] = { kind: 'internal', name: GLOBAL_ERR }
+      } else {
+        const physSlot = direction === 'in'
+          ? `$S${ctx.scopeId}.in${fp.slotIndex}`
+          : `$S${ctx.scopeId}.out${fp.slotIndex}`
+        if (direction === 'in') {
+          // 装载: 业务变量 → 物理输入槽
+          moves.push(makeMove(
+            { kind: 'internal', name: ref.name },
+            { kind: 'internal', name: physSlot }
+          ))
+        } else {
+          // 卸载: 物理输出槽 → 业务变量
+          // bestEffort=true: op 抛硬错误时物理输出槽未写出,跳过此 move(错误已入 $err)
+          moves.push(makeMove(
+            { kind: 'internal', name: physSlot },
+            { kind: 'internal', name: ref.name },
+            true
+          ))
+        }
+        addrs[name] = { kind: 'internal', name: physSlot }
+      }
     } else if (ctx.newPath && spec) {
       // register kind（保留原分支：direction='out'，或 direction='in' 且未命中跨 op out-slot 别名）
       const fp = (direction === 'in' ? spec.inputs : spec.outputs)[name]
@@ -700,7 +719,6 @@ export function compileOp(
   return [
     ...ins.moves,
     ...envSidecar,
-    ...outs.moves, // outputs 一般无 literal，但保持对称（会 throw）
     {
       id: generateId(idPrefix.slice(0, 4)),
       parentIntentId: null,
@@ -710,7 +728,8 @@ export function compileOp(
       inputs: { ...ins.addrs, ...(envAddr ?? {}) },
       outputs: outs.addrs,
       status: 'pending'
-    }
+    },
+    ...outs.moves, // C6: output 卸载 move (物理输出槽 → 业务变量) 在 op 执行后
   ]
 }
 
@@ -859,8 +878,12 @@ function findStepProducingOutput(
 
 // ============== 工具 ===============
 
-function makeMove(from: Address, to: Address): StackEntry & { kind: 'move' } {
-  return {
+function makeMove(
+  from: Address,
+  to: Address,
+  bestEffort?: boolean
+): StackEntry & { kind: 'move' } {
+  const entry: StackEntry & { kind: 'move' } = {
     id: generateId('move'),
     parentIntentId: null,
     createdAt: now(),
@@ -868,6 +891,10 @@ function makeMove(from: Address, to: Address): StackEntry & { kind: 'move' } {
     from,
     to
   }
+  if (bestEffort) {
+    ;(entry as StackEntry & { kind: 'move'; bestEffort?: boolean }).bestEffort = true
+  }
+  return entry
 }
 
 /**

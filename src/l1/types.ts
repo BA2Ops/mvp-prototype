@@ -153,6 +153,17 @@ export interface MoveEntry extends BaseEntry {
   from: Address
   /** 目标地址（不能是 literal）*/
   to: Address
+  /**
+   * C6 输出卸载 move 的 best-effort 标志。
+   *
+   * 当 from.kind='internal' 且源物理输出槽（$S<scope>.out<k>）不存在时，
+   * 跳过该 move（pop + 返回），不抛 AddressError。
+   *
+   * 语义：op 抛硬错误时未写出物理输出槽，编译器生成的"物理输出槽 → 业务变量"
+   * 卸载 move 不应再抛错（错误已由 bubbleError 写入 $err）。
+   * 业务变量保持原值（或未设置），后续 catch 逻辑读 $err 判断。
+   */
+  bestEffort?: boolean
 }
 
 /**

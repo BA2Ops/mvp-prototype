@@ -1,0 +1,14 @@
+{
+  "id": "replace_in_file",
+  "description": "读取文件、替换内容、写回(文件编辑 MVP)。",
+  "tags": [
+    "file",
+    "replace"
+  ],
+  "category": "file-io",
+  "sideEffects": "fs-write",
+  "version": "1.0.0",
+  "createdAt": 1788945789338,
+  "updatedAt": 1788945789338,
+  "status": "active"
+}

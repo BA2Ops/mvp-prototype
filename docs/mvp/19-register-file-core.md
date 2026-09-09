@@ -8,7 +8,7 @@
 
 ## 背景（一句话）
 
-当前实现下,internalStore 实际是无界的 Map<string,Value>,由三股力量共同造成膨胀:①literal sidecar `$r_argtmp_N` 单调自增;②经验作者手工硬编码业务寄存器名(`$r_content/$r_matches/…`)且跨经验同名覆盖;③register 引用 kind 直接 throw(D-C6-1/D2 未落地),导致 A→B 只能传 literal/input 快照值。**子经验无法拿到父经验的中间结果与最终输出**,是当前最尖锐的功能缺口。
+当前实现下,internalStore 实际是无界的 Map<string,Value>,由三股力量共同造成膨胀:①literal sidecar `$r_argtmp_N` 单调自增;②经验作者手工硬编码业务变量名(`$r_content/$r_matches/…`)且跨经验同名覆盖;③register 引用 kind 直接 throw(D-C6-1/D2 未落地),导致 A→B 只能传 literal/input 快照值。**子经验无法拿到父经验的中间结果与最终输出**,是当前最尖锐的功能缺口。
 
 ---
 
@@ -23,14 +23,14 @@
 
 ### C2 — Nested Params Support Register Reference(子经验可读父经验产物)
 
-`ParamRef` 的 `kind:'register'`(结构化 ref `{exp?, outKey}`)正式支持:A 在处理过程中写入内部数据区的所有具名产物(pre-processing 输出 / target step 中间变量 / outputs_bindings 声明的最终返回值)都能被其调用的子经验 B **按业务名引用**;dispatch 到 B 时才 resolve(CALL/RET caller-saved convention),类型不匹配 → 编译期 `ParamRefError`。
+`ParamRef` 的 `kind:'register'`(结构化 ref `{exp?, outKey}`)正式支持:A 在处理过程中写入内部数据区的所有具名产物(pre-processing 输出 / target step 中间变量 / outputs_bindings 声明的最终返回值)都能被其调用的子经验 B **按业务变量名引用**;dispatch 到 B 时才 resolve(CALL/RET caller-saved convention),类型不匹配 → 编译期 `ParamRefError`。
 
 *验收*:demo-06-nested-experience 加 A.file_read.output.content → B.string_replace.input.text 真实传递用例;负例:类型不兼容 / 悬空 outKey throw ParamRefError;替换现有 makeNestedIntent 对 register kind 直接 throw 的行为(D-C6-1/D2 待办项本体)。  
-*关键语义*:不再是"值快照拷贝",而是 deferred binding —— B.bindInputs 生成 `move(from=$S_parent.outK, to=S_child.inK)` 而非 literal move。
+*关键语义*:不再是"值快照拷贝",而是 deferred binding —— B.bindInputs 生成 `move(from=$S_parent.outK, to=S_child.inK)` 而非 literal move。**注**:此处 `$r_<name>` 是业务变量名(经验级命名连线),不是物理寄存器名;物理寄存器由 formalSpec.slotIndex 决定,对其他 op 不可见(详见 C6)。
 
 ### C3 — Fixed Slot Convention + Frame Scope Prefixing(跨指令复用固定槽位,CPU ISA 对齐)
 
-每条 L2 op 通过 formalSpec.slotIndex 拥有固定的 `$in<k>`/`$out<k>` slot 编号(M_max=4 / P_max=3);**同一物理槽位在 op dispatch in→done+pop 窗口内稳定归属该 op**,不同 op/经验可先后使用相同 slot。**消灭 argtmp_N 自增模式**。CALL/RET 隔离靠 frame scope prefixing($S<scope>.*)由编译器闭包捕获 currentScopePrefix,**L1 Address/execute_op/move primitive 零改动**(只认字符串)。
+每条 L2 op 通过 formalSpec.slotIndex 拥有固定的 `$in<k>`/`$out<k>` slot 编号(M_max=5 / P_max=3);**同一物理槽位在 op dispatch in→done+pop 窗口内稳定归属该 op**,不同 op/经验可先后使用相同 slot。**消灭 argtmp_N 自增模式**。CALL/RET 隔离靠 frame scope prefixing($S<scope>.*)由编译器闭包捕获 currentScopePrefix,**L1 Address/execute_op/move primitive 零改动**(只认字符串)。**op 的物理寄存器对其他 op 不可见**(详见 C6);op 间数据传递通过业务变量区($r_<name>)中转,编译器自动生成 move 指令在物理寄存器和业务变量之间搬运。
 
 *验收*:两条共享 file_read 的经验生成的 OpEntry inputs/outputs Address.name **完全相同**(除 scope prefix);internalStore.size() ≤ U_max(R5.3 §三核算);formalSpec.register('$r0'/$r1…)与实际使用的 $S_scope.in/out 名一一对齐(D-3 兑现——今天 [RegisterAllocator](../../src/l1/execution-state.ts) 定义在 L1、暴露给 L3 却从未被 compiler 调用过)。  
 *CPU 类比落地*:通用寄存器号不变,frame 切换 = effective address bank-select(x86 segment:offset / ARM NEON V-register bank),caller-saved vs callee-saved convention 对应 input/output slot 的读写边界。
@@ -48,6 +48,180 @@ Experience schema 新增 `outputs_bindings: {<key>: {register:'$scope.out<k>', t
 
 *验收*(若采纳):safe_write/read_file_with_default e2e 跑完后 publicStore['safe_write.bytes_written'] / ['read_file.content'] 可读;未声明 bindings 的经验不污染 publicStore(opt-in,persist:true 默认 false —— MVP 双区隔离 D-T1 初衷保留);"每句新 state"的对话级隔离性保持(P0 前行为不变)。  
 *现状对照*:publicStore 今天存在但**零写入点**(address-resolver.writeAddress kind:'public' 分支可达、全代码库无产生路径)——C5 是它的第一个真实消费者。
+
+### C6 — 三层数据存储模型与 op 寄存器隔离
+
+经验内数据存储分为三层,各层有明确的可见性边界和生命周期:
+
+| 层 | 名称 | 命名 | 可见范围 | 生命周期 | 由谁命名 |
+|---|---|---|---|---|---|
+| **物理寄存器层** | op 局部工作区 | `$S<scope>.in<k>` / `$S<scope>.out<k>` | 仅当前 op 执行期间 | op 执行开始→结束 | formalSpec.slotIndex(编译器) |
+| **业务变量层** | 经验级命名存储 | `$r_<name>` | 当前经验内所有 op | 经验执行全程 | 经验作者(ParamRef.name) |
+| **持久输出层** | 跨经验持久 | `publicStore['<expId>.<key>']` | 跨经验/跨轮次 | 持久 | outputs_bindings(经验作者声明) |
+
+**核心约束**:
+
+1. **op 与物理寄存器的绑定由 formalSpec.slotIndex 决定**——经验作者不能选择物理寄存器名,只能选择业务变量名
+2. **op 的物理寄存器对其他 op 不可见**——一个 op 不能直接引用另一个 op 的物理寄存器;op 间数据传递只能通过业务变量区
+3. **编译器自动生成 move**——对每个 op 的每个 input,生成 `move(业务变量, 物理输入槽)`;对每个 output,生成 `move(物理输出槽, 业务变量)`
+4. **物理寄存器可复用**——不同 op 依次使用同一物理槽(如 `$S0.in0`),因为数据在 op 间已通过业务变量区保存
+5. **op 抛硬错误时输出卸载 move 为 best-effort**——op 抛硬错误后物理输出槽未写出,编译器生成的"物理输出槽 → 业务变量"卸载 move 标记 `bestEffort:true`,源缺失时跳过(不抛 AddressError);错误已由 `bubbleError` 写入 `$err`,业务变量保持原值,后续 catch 逻辑读 `$err` 判断
+
+**业务变量的共享语义(含递归)**:
+
+业务变量(`$r_<name>`)存储在 `internalStore` 这一共享 Map 中,按名称字符串寻址,**不加 scope 前缀**。这意味着:
+- 同一经验内的顺序 op 通过业务变量名中转数据(op A 写入 `$r_content`,op B 读 `$r_content`)。
+- **递归调用同一经验时,父子帧共享同名业务变量**——这是刻意的设计,而非缺陷。递归累积器(如 `count_up_iter` 的 `$r_cur`)依赖此共享语义在递归帧之间传递状态,绕过"嵌套 params 仅支持 literal/input"的 MVP 限制。
+- 全局功能寄存器 `$err`/`$path` 同样不加 scope 前缀,跨帧共享(`bubbleError`/`resolveResponse` 依赖此不变量)。
+- 物理寄存器(`$S<scope>.in/out`)则由 scope 前缀隔离,父子帧的 `$S1.in0` 与 `$S2.in0` 是不同的 Map entry,互不可见。
+
+**与 CPU 执行模型的对应**:
+
+| 本系统 | CPU 执行模型 |
+|--------|------------|
+| `$S0.in0` / `$S0.out2`(物理寄存器) | 通用寄存器 RAX, RBX, RCX |
+| `$r_content`(业务变量) | 栈帧上的局部变量 `[rbp-8]` |
+| `move($r_content, $S0.in0)`(装载输入) | `mov rax, [rbp-8]`(从栈加载到寄存器) |
+| `move($S0.out2, $r_content)`(卸载输出) | `mov [rbp-16], rax`(从寄存器存回栈) |
+| `execute_op file_read` | `call file_read`(函数调用,使用自己的寄存器窗口) |
+| formalSpec.slotIndex | 函数参数寄存器约定(x86-64 ABI: rdi/rsi/rdx) |
+| op 间不可见物理寄存器 | 函数调用后 caller-saved 寄存器不保证保留 |
+
+CPU 中不存在"让函数 B 直接读函数 A 的寄存器"——函数 A 返回后寄存器可能已被覆盖。数据必须在函数调用之间通过栈中转。本系统同理:op 之间通过业务变量区中转。
+
+#### C6 完整示例:replace_in_file 三步链
+
+**经验作者视角**(只看到业务变量名):
+
+```typescript
+const replaceInFile: Experience = {
+  id: 'replace_in_file',
+  inputs: { path: {type:'path'}, find: {type:'string'}, replace: {type:'string'} },
+  outputs: { count: {type:'number'} },
+  outputs_bindings: { count: { register: '$r_count', persist: true } },
+  target_op: {
+    paths: [{
+      steps: [
+        { operation: 'file_read',
+          inputs:  { path: { kind: 'input', name: 'path' } },
+          outputs: { content: { kind: 'register', name: '$r_content' },
+                     error:  { kind: 'register', name: '$r_err' } } },
+        { operation: 'string_replace',
+          inputs:  { text:       { kind: 'register', name: '$r_content' },
+                     find:        { kind: 'input',   name: 'find' },
+                     replace:     { kind: 'input',   name: 'replace' },
+                     replace_all: { kind: 'literal', value: true } },
+          outputs: { result: { kind: 'register', name: '$r_replaced' },
+                     count:  { kind: 'register', name: '$r_count' },
+                     error:  { kind: 'register', name: '$r_err' } } },
+        { operation: 'file_write',
+          inputs:  { path:    { kind: 'input',   name: 'path' },
+                     content: { kind: 'register', name: '$r_replaced' } },
+          outputs: { bytes_written: { kind: 'register', name: '$r_bytes' },
+                     error:         { kind: 'register', name: '$r_err' } } }
+      ]
+    }]
+  }
+}
+```
+
+`$r_content`、`$r_replaced`、`$r_count` 等是**业务变量名**(命名连线),不是物理寄存器名。step2 的 `text` 引用 `$r_content` 声明的是"我的 text 输入来自名为 $r_content 的连线"。
+
+**op formalSpec 视角**(物理寄存器,对其他 op 不可见):
+
+```
+file_read (scopeId=S0):
+  inputs:  path     → $S0.in0   (slotIndex 0)
+           encoding → $S0.in1   (slotIndex 1)
+  outputs: content  → $S0.out2  (slotIndex 2)
+           error    → $err      (slotIndex 99, 全局)
+
+string_replace (scopeId=S0):
+  inputs:  text        → $S0.in0   (slotIndex 0)
+           find        → $S0.in1   (slotIndex 1)
+           replace     → $S0.in2   (slotIndex 2)
+           regex       → $S0.in3   (slotIndex 3)
+           replace_all → $S0.in4   (slotIndex 4)
+  outputs: result      → $S0.out5  (slotIndex 5)
+           count       → $S0.out6  (slotIndex 6)
+           error       → $err      (slotIndex 99, 全局)
+
+file_write (scopeId=S0):
+  inputs:  path          → $S0.in0   (slotIndex 0)
+           content       → $S0.in1   (slotIndex 1)
+           mode          → $S0.in2   (slotIndex 2)
+           encoding      → $S0.in3   (slotIndex 3)
+  outputs: bytes_written → $S0.out4  (slotIndex 4)
+           error         → $err      (slotIndex 99, 全局)
+```
+
+`$S0.in0` 在 file_read 执行期间是 `path` 的物理槽,在 string_replace 执行期间是 `text` 的物理槽,在 file_write 执行期间又是 `path` 的物理槽。**同一物理槽在不同 op 执行期间承载不同业务变量**——这正是 CPU 寄存器复用的方式。
+
+**编译器产出的 L1 指令序列**(`@` 标注运行时 internalStore 状态):
+
+```
+═══ Step 0: 输入绑定 (bindInputs) ═══
+move(literal{'/a.txt'}, $r_input_path)      @ $r_input_path = '/a.txt'
+move(literal{'old'},    $r_input_find)      @ $r_input_find = 'old'
+move(literal{'new'},    $r_input_replace)   @ $r_input_replace = 'new'
+
+═══ Step 1: file_read ═══
+  ── 1a. 装载输入: 业务变量 → 物理寄存器 ──
+  move($r_input_path, $S0.in0)              @ $S0.in0 = '/a.txt'
+  ── 1b. 执行 op (op 只看到自己的物理寄存器) ──
+  execute_op file_read
+    inputs:  { path: $S0.in0 }
+    outputs: { content: $S0.out2, error: $err }
+                                           @ $S0.out2 = 'old content here'
+                                           @ $err = null
+  ── 1c. 卸载输出: 物理寄存器 → 业务变量 ──
+  move($S0.out2, $r_content)                @ $r_content = 'old content here'
+
+═══ Step 2: string_replace ═══
+  ── 2a. 装载输入 ──
+  move($r_content,       $S0.in0)          @ $S0.in0 = 'old content here'
+  move($r_input_find,    $S0.in1)          @ $S0.in1 = 'old'
+  move($r_input_replace, $S0.in2)          @ $S0.in2 = 'new'
+  move(literal{true},    $S0.argtmp0)      @ $S0.argtmp0 = true (literal sidecar)
+  move($S0.argtmp0,      $S0.in4)          @ $S0.in4 = true
+  ── 2b. 执行 op ──
+  execute_op string_replace
+    inputs:  { text: $S0.in0, find: $S0.in1, replace: $S0.in2, replace_all: $S0.in4 }
+    outputs: { result: $S0.out5, count: $S0.out6, error: $err }
+                                           @ $S0.out5 = 'new content here'
+                                           @ $S0.out6 = 1
+                                           @ $err = null
+  ── 2c. 卸载输出 ──
+  move($S0.out5, $r_replaced)              @ $r_replaced = 'new content here'
+  move($S0.out6, $r_count)                 @ $r_count = 1
+
+═══ Step 3: file_write ═══
+  ── 3a. 装载输入 ──
+  move($r_input_path, $S0.in0)            @ $S0.in0 = '/a.txt'
+  move($r_replaced,   $S0.in1)            @ $S0.in1 = 'new content here'
+  ── 3b. 执行 op ──
+  execute_op file_write
+    inputs:  { path: $S0.in0, content: $S0.in1 }
+    outputs: { bytes_written: $S0.out4, error: $err }
+                                           @ $S0.out4 = 17
+                                           @ $err = null
+  ── 3c. 卸载输出 ──
+  move($S0.out4, $r_bytes)                 @ $r_bytes = 17
+
+═══ Step 5: post-bindings (输出提升) ═══
+move($r_count, publicStore['replace_in_file.count'])
+                                           @ publicStore['replace_in_file.count'] = 1
+```
+
+**指令计数**:15 条 move + 3 条 execute_op = 18 条 L1 指令。
+
+**证明的三个关系**:
+
+1. **op 与物理寄存器的绑定**:每个 `execute_op` 的 inputs/outputs 只包含该 op 自己的物理寄存器(由 formalSpec.slotIndex 决定)。`file_read` 的 OpEntry 中不出现 `$S0.out5`(string_replace 的 result slot)。
+
+2. **op 间数据传递必须经过业务变量区**:`file_read` 的输出 `$S0.out2` 和 `string_replace` 的输入 `$S0.in0` 是不同的物理寄存器。数据流路径: `$S0.out2 → move → $r_content → move → $S0.in0`。如果省略 move,`string_replace` 执行时 `$S0.in0` 中是 `file_read` 留下的 `path` 值而非文件内容。
+
+3. **物理寄存器复用与业务变量持久**:`$S0.in0` 被三个 op 依次复用(file_read 的 path → string_replace 的 text → file_write 的 path),因为数据在 op 间已通过业务变量区($r_input_path, $r_content, $r_replaced)保存。
 
 ---
 
@@ -85,7 +259,7 @@ Experience schema 新增 `outputs_bindings: {<key>: {register:'$scope.out<k>', t
 ### K4a — "跨较长指令序列 / 多个子经验复用同一 parent output slot"的边界条件(实现目标 + 验证目标)
 
 > **场景来源**(2026-08-21 评审):`A.file_read.output.content` 可能被 (a) A 自身 steps[] 后续多条 op 先后消费(read→replace→verify…),或 (b) A 调用的**多个子经验 B₁/B₂…Bₖ**各自作为 input 引用(每个 CALL Bᵢ 都 bindInputs copy 一次)。
-> **核心结论**:K2/K4 scope retention(A pending→done+pop window)= CPU caller-saved convention,**天然保证父 frame out-slot 在整个 CALL chain 期间存活且不被覆写**(除非同 experience 内另一条 step 显式 alias 同一 $S_A.out_k —— caller-saved 约定下这是合法且预期的,见 [execute-op.ts Step6 writeAddress](../../src/l1/primitives/execute-op.ts#L97-L105));因此**无需为"长链路/多引用"把 content move 到 publicStore(业务变量区)**。move→public 只属于 C5 persist opt-in(K5/N5 跨 frame/cross-turn 持久化),不是本场景的解法。**误标 persist:true = R-4🟢低反模式 + K5 growth-channel 污染**。
+> **核心结论**:K2/K4 scope retention(A pending→done+pop window)= CPU caller-saved convention,**天然保证父 frame out-slot 在整个 CALL chain 期间存活且不被覆写**(除非同 experience 内另一条 step 显式 alias 同一 $S_A.out_k —— caller-saved 约定下这是合法且预期的,见 [execute-op.ts Step6 writeAddress](../../src/l1/primitives/execute-op.ts#L97-L105));因此**无需为"长链路/多引用"把 content move 到 publicStore(持久输出层)**。move→public 只属于 C5 persist opt-in(K5/N5 跨 frame/cross-turn 持久化),不是本场景的解法。**误标 persist:true = R-4🟢低反模式 + K5 growth-channel 污染**。
 
 #### 实现目标(P3 register-ref deferred binding 落地后)
 

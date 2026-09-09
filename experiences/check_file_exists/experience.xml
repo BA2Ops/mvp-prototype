@@ -1,0 +1,44 @@
+<experience id="check_file_exists" description="判断文件是否存在(可读)。返回 exists 布尔值,不抛出。" handleError>
+  <inputs>
+    <param name="path" type="path" required=""/>
+  </inputs>
+  <outputs>
+    <param name="exists" type="boolean" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="probe" opName="file_read">
+      <inputs>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="content" as="$r_probe"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="calc_exists" opName="evaluate_expr">
+      <inputs>
+        <input name="expr" literal="[object Object]"/>
+      </inputs>
+      <outputs>
+        <output name="result" as="$r_exists"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="exists = is_null($r_err)" response="文件 {path} 存在检查完成:{exists}">
+      <steps>
+        <step node="calc_exists"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="exists" register="$r_exists" type="boolean" persist=""/>
+  </outputBindings>
+  <metadata category="file-io" sideEffects="read-only" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>exists</tag>
+    </tags>
+  </metadata>
+</experience>

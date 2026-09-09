@@ -1,0 +1,14 @@
+{
+  "id": "read_file",
+  "description": "读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。",
+  "tags": [
+    "file",
+    "read"
+  ],
+  "category": "file-io",
+  "sideEffects": "read-only",
+  "version": "1.0.0",
+  "createdAt": 1788945789300,
+  "updatedAt": 1788945789300,
+  "status": "active"
+}

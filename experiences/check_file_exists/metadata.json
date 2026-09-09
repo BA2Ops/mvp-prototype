@@ -1,0 +1,14 @@
+{
+  "id": "check_file_exists",
+  "description": "判断文件是否存在(可读)。返回 exists 布尔值,不抛出。",
+  "tags": [
+    "file",
+    "exists"
+  ],
+  "category": "file-io",
+  "sideEffects": "read-only",
+  "version": "1.0.0",
+  "createdAt": 1788945789313,
+  "updatedAt": 1788945789313,
+  "status": "active"
+}

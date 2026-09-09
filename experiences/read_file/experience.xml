@@ -1,0 +1,40 @@
+<experience id="read_file" description="读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。">
+  <inputs>
+    <param name="path" type="path" required=""/>
+  </inputs>
+  <outputs>
+    <param name="content" type="string" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="read" opName="file_read">
+      <inputs>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="content" as="$r_content"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="读取文件" response="已读取 {path} 的内容">
+      <steps>
+        <step node="read"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="content" register="$r_content" type="string" persist=""/>
+  </outputBindings>
+  <failureMessages>
+    <message code="ENOENT" message="读取失败:文件 {path} 不存在"/>
+    <message code="EACCES" message="读取失败:没有权限访问 {path}"/>
+    <message code="*" message="读取失败:{err.message}"/>
+  </failureMessages>
+  <metadata category="file-io" sideEffects="read-only" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>read</tag>
+    </tags>
+  </metadata>
+</experience>

@@ -1,0 +1,15 @@
+{
+  "id": "search_in_files",
+  "description": "在文件/目录中搜索内容(字面量或正则),返回匹配列表。",
+  "tags": [
+    "file",
+    "search",
+    "grep"
+  ],
+  "category": "search",
+  "sideEffects": "read-only",
+  "version": "1.0.0",
+  "createdAt": 1788945789329,
+  "updatedAt": 1788945789329,
+  "status": "active"
+}

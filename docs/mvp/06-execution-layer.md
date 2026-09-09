@@ -302,7 +302,7 @@ type Move = {
 - `from` 可以是任何 Address kind（literal / public / internal / file）
 - `to` **不能是 literal**（尝试写入 literal 抛 `AddressError`）
 - 跨区 move 是合法的：public → internal, internal → public, file → internal, internal → file, public → file, file → public 等
-- 同区 move：internal → internal（寄存器重命名）、public → public（业务变量重命名）
+- 同区 move：internal → internal（物理寄存器 ↔ 业务变量区搬运）、public → public（业务变量重命名）
 - `from` 与 `to` **不需要是同区**（跨区是 move 的主要用途）
 
 **特殊寄存器名**：

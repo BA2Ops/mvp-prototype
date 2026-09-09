@@ -78,8 +78,9 @@ class FrameScopeAllocator {
 compiler 生成 evaluate_expr OpEntry 时:
 ```typescript
 const env = collectVarRefs(j.trigger.condition_expr)   // 静态遍历 AST {type:'var',name}
-            .reduce((acc,n)=>{ acc[n]=resolveSlotFor(n /*'$r_content'→'S2.out0'*/); return acc }, {})
-// resolveSlotFor: '$err'/'$path' → global;否则按 formalSpec/businessName 反查当前 experience 内该业务名绑定的 $scope.in/out<slot>
+            .reduce((acc,n)=>{ acc[n]=resolveSlotFor(n /*'$r_content'→业务变量名,不变*/); return acc }, {})
+// resolveSlotFor: '$err'/'$r_err' → $err (全局);否则返回业务变量名本身($r_content 等)
+// C6: 表达式变量引用业务变量名,不是物理寄存器名;业务变量在 internalStore 中以 $r_<name> 为 key
 return { kind:'execute_op', operation:'evaluate_expr', inputs:{expr:{kind:'internal',name:`${SCOPE_ROOT}.cond_${j.id}`}}, outputs:{result:{...`judge_${j.id}`},error:{GLOBAL_ERR}}, /* ★新增env字段传递 */ ... }
 // execute-op.ts Step5 调用 op.execute(resolvedInputs, state) —— evaluateExprOp.formalSpec.inputs.env.register='$in1'(R5.2 规则),value 即上面的 env map(从 literal move 到 $in1,或直接走 sidecar pool 装载字面量对象——见 R6a)
 conditional_skip.conditionAddr = Address{name:`${s}.out${k_of_judgeResult}`}      // compileBranch 里把 judgeReg 改为 slot 引用
@@ -91,7 +92,7 @@ conditional_skip.conditionAddr = Address{name:`${s}.out${k_of_judgeResult}`}    
 
 ## 三、编译器变更伪代码（核心改动点）
 
-### expandRefs：消灭 argtmp 自增，改用固定池轮转(R6a)+ scope-aware slot 名
+### expandRefs：消灭 argtmp 自增，改用固定池轮转(R6a)+ scope-aware slot 名 + 业务变量区中转
 
 ```typescript
 function expandRefs(refs: Record<string,ParamRef>, dir:'in'|'out', ctx): {moves, addrs} {
@@ -103,15 +104,28 @@ function expandRefs(refs: Record<string,ParamRef>, dir:'in'|'out', ctx): {moves,
       moves.push(makeMove({kind:'literal', value: ref.value}, toSlot(reg)))
       addrs[name] = internalAddr(reg)
     } else if (ref.kind === 'input') {
-      addrs[name] = internalAddr(SLOT_PREFIX_IN(ctx.scopePrefix, ctx.formalSpecIndex[ref.name]))   // ★B1:C3 fixed slot index(formalSpec.slotIndex),不再 $r_input_<key>
+      // 业务变量 $r_input_<key> → 物理 in slot (C6: 编译器生成 move)
+      const physSlot = `$S${ctx.scope}.in${ctx.formalSpecIndex[ref.name]}`
+      moves.push(makeMove({kind:'internal', name: INPUT_PREFIX+ref.name}, {kind:'internal', name: physSlot}))
+      addrs[name] = internalAddr(physSlot)
     } else /* register kind */{
-      // C2(R5.4 P3):register 引用 → resolve 父 frame 的具化输出槽位(见 §四);P1–P2 仍 throw ParamRefError('not supported until P3')
-      addrs[name] = resolveRegisterRef(ref.name, ctx)
+      // C6: $r_<name> 是业务变量名,不是物理寄存器名
+      //  - dir='out': op 执行后 move 物理输出槽 → 业务变量
+      //  - dir='in':  op 执行前 move 业务变量 → 物理输入槽
+      const physSlot = resolvePhysicalSlot(name, dir, ctx)  // formalSpec.slotIndex → $S<scope>.in/out<k>
+      if (dir === 'out') {
+        moves.push(makeMove({kind:'internal', name: physSlot}, {kind:'internal', name: ref.name}))
+      } else {
+        moves.push(makeMove({kind:'internal', name: ref.name}, {kind:'internal', name: physSlot}))
+      }
+      addrs[name] = internalAddr(physSlot)
     }
   }
   return {moves,addrs}
 }
 ```
+
+**C6 关键变更**:register kind 不再直接把 `$r_<name>` 作为 OpEntry 的 input/output 地址。`$r_<name>` 是业务变量名(经验级命名连线),物理寄存器由 formalSpec.slotIndex 决定。编译器对每个 input 生成 `move(业务变量, 物理输入槽)`,对每个 output 生成 `move(物理输出槽, 业务变量)`。op 的物理寄存器对其他 op 不可见。
 
 ### bindInputs：改用 scope-aware slot；outputs materialization(P2 Step5)新增收尾 move
 

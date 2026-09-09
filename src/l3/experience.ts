@@ -26,11 +26,16 @@ export type { Expr } from '../l2/builtins/evaluate-expr.js'
  *
  * 四种来源：
  * - literal: 字面量
- * - input: 来自 intent.params（L3 compile-time 绑定到 $r_input_* 寄存器）
- * - register: 引用 internalStore 中的已有寄存器名（如 '$r_file_content'）
- *   ——包括前置处理的输出。D-C1-1: 删除原 `kind:'preprocessing'`，因为
- *   前置输出的本质就是「写入了某个 named register」，用 register 引用即可。
- *   好处：简化编译逻辑；让经验定义中可自由引用任意中间结果（不必显式声明依赖链）。
+ * - input: 来自 intent.params（L3 compile-time 绑定到 $r_input_<key> 业务变量）
+ * - register: 引用经验级业务变量名（如 '$r_content'）
+ *   ——$r_<name> 是业务变量名（经验级命名连线），不是物理寄存器名。
+ *   物理寄存器由 op 的 formalSpec.slotIndex 决定（$S<scope>.in/out<k>），
+ *   对其他 op 不可见。编译器自动生成 move 指令在业务变量区和 op 物理寄存器之间搬运：
+ *   - op output: move(物理输出槽, 业务变量名)
+ *   - op input:  move(业务变量名, 物理输入槽)
+ *   详见 doc 19 C6「三层数据存储模型与 op 寄存器隔离」。
+ *   D-C1-1: 删除原 `kind:'preprocessing'`，因为前置输出的本质就是「写入了一个业务变量」，
+ *   用 register 引用即可。
  * - registerOutput (P3/T-3.1): 结构化引用某个具体经验的 output。
  *   等价于 `register: name=<expId>.<outKey> 解析到的具体 $S_parent.out<k> 寄存器`。
  *   expId 可选:不提供时 从当前 frame 的最近一个写入 outKey 的经验中查找 (parent frame retention)。

@@ -1,0 +1,15 @@
+{
+  "id": "find_files",
+  "description": "按 glob 模式查找文件,返回路径列表。",
+  "tags": [
+    "file",
+    "search",
+    "glob"
+  ],
+  "category": "search",
+  "sideEffects": "read-only",
+  "version": "1.0.0",
+  "createdAt": 1788945789325,
+  "updatedAt": 1788945789325,
+  "status": "active"
+}

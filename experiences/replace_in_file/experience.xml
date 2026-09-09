@@ -1,0 +1,66 @@
+<experience id="replace_in_file" description="读取文件、替换内容、写回(文件编辑 MVP)。" handleError>
+  <inputs>
+    <param name="path" type="path" required=""/>
+    <param name="find" type="string" required=""/>
+    <param name="replace" type="string" required=""/>
+  </inputs>
+  <outputs>
+    <param name="count" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="read" opName="file_read">
+      <inputs>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="content" as="$r_content"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="replace" opName="string_replace">
+      <inputs>
+        <input name="text" fromNode="read.content"/>
+        <input name="find" fromInput="find"/>
+        <input name="replace" fromInput="replace"/>
+        <input name="replace_all" literal/>
+      </inputs>
+      <outputs>
+        <output name="result" as="$r_replaced"/>
+        <output name="count" as="$r_count"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="write" opName="file_write">
+      <inputs>
+        <input name="path" fromInput="path"/>
+        <input name="content" fromNode="replace.result"/>
+      </inputs>
+      <outputs>
+        <output name="bytes_written" as="$r_bytes"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+  </nodes>
+  <paths>
+    <path id="normal" description="读 → 替换 → 写" response="替换完成:{path} 中共替换 {count} 处并已保存">
+      <steps>
+        <step node="read"/>
+        <step node="replace"/>
+        <step node="write"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="count" register="$r_count" type="number" persist=""/>
+  </outputBindings>
+  <failureMessages>
+    <message code="ENOENT" message="替换失败:文件 {path} 不存在"/>
+    <message code="*" message="替换失败:{err.message}"/>
+  </failureMessages>
+  <metadata category="file-io" sideEffects="fs-write" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>replace</tag>
+    </tags>
+  </metadata>
+</experience>

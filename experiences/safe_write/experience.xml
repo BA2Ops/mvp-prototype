@@ -1,0 +1,62 @@
+<experience id="safe_write" description="安全写入:目标文件已存在时跳过(不覆盖),否则写入。" handleError>
+  <inputs>
+    <param name="path" type="path" required=""/>
+    <param name="content" type="string" required=""/>
+  </inputs>
+  <outputs>
+    <param name="bytes_written" type="number" required=""/>
+  </outputs>
+  <nodes>
+    <opNode id="probe_existing" opName="file_read">
+      <inputs>
+        <input name="path" fromInput="path"/>
+      </inputs>
+      <outputs>
+        <output name="content" as="$r_existing"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="do_write" opName="file_write">
+      <inputs>
+        <input name="path" fromInput="path"/>
+        <input name="content" fromInput="content"/>
+      </inputs>
+      <outputs>
+        <output name="bytes_written" as="$r_bytes"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <opNode id="set_zero" opName="evaluate_expr">
+      <inputs>
+        <input name="expr" literal="0"/>
+      </inputs>
+      <outputs>
+        <output name="result" as="$r_bytes"/>
+        <output name="error" as="$r_err"/>
+      </outputs>
+    </opNode>
+    <conditionNode id="already_exists" varName="$r_err" condition="falsy" thenPath="do_write" elsePath="abort"/>
+  </nodes>
+  <paths>
+    <path id="do_write" description="文件不存在 → 写入" response="已写入 {path}({bytes} 字节)">
+      <steps>
+        <step node="do_write"/>
+      </steps>
+    </path>
+    <path id="abort" description="文件已存在 → 跳过(bytes=0)" response="文件 {path} 已存在,按安全模式跳过写入">
+      <steps>
+        <step node="set_zero"/>
+      </steps>
+    </path>
+  </paths>
+  <outputBindings>
+    <binding name="bytes_written" register="$r_bytes" type="number" persist=""/>
+  </outputBindings>
+  <metadata category="file-io" sideEffects="fs-write" version="1.0.0">
+    <tags>
+      <tag>file</tag>
+      <tag>write</tag>
+      <tag>safe</tag>
+    </tags>
+  </metadata>
+</experience>
