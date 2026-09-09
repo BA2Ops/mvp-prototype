@@ -135,8 +135,9 @@ ctx.prefilledInputKeys = options?.prefilledInputKeys
 
   // CRR T-1.6: 聚合经验可见的 outputsByName (从每个 step 的 outputs[*].name 反查 op formalSpec)
   // 注意: 这是经验级聚合,即"本经验内可见的输出 slot 名集合"
-  // 主要用于 evaluate_expr env 填充
+  // 主要用于 evaluate_expr env 填充;CRR P3/T-D1-fix:同时供 expandRefs input-side register ref 跨 op 引用复用同一张表
   const outputsByName = aggregateOutputsByName(exp, ctx)
+  ctx.outputsByAlias = outputsByName
   const inputNames = new Set(Object.keys(exp.inputs ?? {}))
 
   // Step 0: 输入绑定 (legacy + new 路径语义相同 —— $r_input_<key>)
@@ -367,6 +368,14 @@ interface CompileCtx {
   prefilledInputKeys?: Set<string>
   /** CRR P3/T-3.2: 嵌套 intent 哪些 param 已由父 binding move 填充, 嵌套 compile 不再生成 input literal move */
   skipParamMoves?: Set<string>
+  /**
+   * CRR P3/T-D1-fix: experience-scoped 输出别名反查表 (aliasName/businessName → FormalParam)
+   *
+   * 供 expandRefs(direction='in', ref.kind='register') 跨 op 引用同 frame 内更早 step
+   * 写入的 output slot ($S<scope>.out<K>),修复原先误用当前 op 自身 .in<k> slotIndex
+   * (与源 out slot 不同址)导致的链式 intermediate 复用失效问题 (T-D1 五步 chain 场景)。
+   */
+  outputsByAlias?: Map<string, import('../l2/operation.js').FormalParam>
 }
 
 // ============== Step 0: 输入绑定 ===============
@@ -600,30 +609,46 @@ function expandRefs(
       // 	(both sides point to same register).
       // 见下方:parent compile 在 makeNestedIntent 之前插入 binding move。
       addrs[name] = { kind: 'internal', name: INPUT_PREFIX + ref.outKey }
-    } else {
-      // register kind
-      if (ctx.newPath && spec) {
-        // 查 formalSpec[k].slotIndex
-        const fp = (direction === 'in' ? spec.inputs : spec.outputs)[name]
-        if (!fp) {
-          throw new Error(
-            `L3 compile: op '${ctx.currentOpName ?? '?'}' has no formalSpec for ${direction}.${name} ` +
-            `(ParamRef points to non-existent slot)`
-          )
-        }
-        if (fp.slotIndex === 99) {
-          // ERROR_SLOT_INDEX → $err
-          addrs[name] = { kind: 'internal', name: GLOBAL_ERR }
-        } else {
-          const slotName = direction === 'in'
-            ? `$S${ctx.scopeId}.in${fp.slotIndex}`
-            : `$S${ctx.scopeId}.out${fp.slotIndex}`
-          addrs[name] = { kind: 'internal', name: slotName }
-        }
-      } else {
-        // legacy path 直接用 ref.name (legacy register 字符串)
-        addrs[name] = { kind: 'internal', name: ref.name }
+    } else if (
+      ctx.newPath &&
+      direction === 'in' &&
+      /^\$r_/.test(ref.name) &&
+      !(ref.name.startsWith('$S') || ref.name === '$err' || ref.name === '$path' || ref.name === '$r_err' || ref.name === '$r_path')
+    ) {
+      // CRR P3/T-D1-fix: intra-frame cross-op output 复用 —— input-side `{kind:'register',name:'$r_<X>'}`
+      // 应解析到写入该逻辑值的 op 的 OUT slot ($S<scope>.out<K>),而非当前 op 自身 INPUT slot
+      const aliasMatch = ref.name.match(/^\$r_(.+)$/)
+      let fp2: import('../l2/operation.js').FormalParam | undefined
+      if (aliasMatch) fp2 = ctx.outputsByAlias?.get(aliasMatch[1]) ?? ctx.outputsByAlias?.get(name)
+      if (!fp2) fp2 = spec!.inputs[name]
+      if (!fp2) {
+        throw new Error(
+          `L3 compile: op '${ctx.currentOpName ?? '?'}' register input '${name}'=${ref.name} — ` +
+          `no formalSpec for in.${name}, no matching earlier-step output, and not a global register`
+        )
       }
+      addrs[name] = { kind: 'internal', name: `$S${ctx.scopeId}.out${fp2.slotIndex}` }
+    } else if (ctx.newPath && spec) {
+      // register kind（保留原分支：direction='out'，或 direction='in' 且未命中跨 op out-slot 别名）
+      const fp = (direction === 'in' ? spec.inputs : spec.outputs)[name]
+      if (!fp) {
+        throw new Error(
+          `L3 compile: op '${ctx.currentOpName ?? '?'}' has no formalSpec for ${direction}.${name} ` +
+          `(ParamRef points to non-existent slot)`
+        )
+      }
+      if (fp.slotIndex === 99) {
+        // ERROR_SLOT_INDEX → $err
+        addrs[name] = { kind: 'internal', name: GLOBAL_ERR }
+      } else {
+        const slotName = direction === 'in'
+          ? `$S${ctx.scopeId}.in${fp.slotIndex}`
+          : `$S${ctx.scopeId}.out${fp.slotIndex}`
+        addrs[name] = { kind: 'internal', name: slotName }
+      }
+    } else {
+      // legacy path 直接用 ref.name (legacy register 字符串)
+      addrs[name] = { kind: 'internal', name: ref.name }
     }
   }
   return { moves, addrs }

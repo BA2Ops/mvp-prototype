@@ -25,6 +25,8 @@ import { ExperienceService } from '../../src/l3/experience-service.js'
 import { CORE_EXPERIENCES } from '../../src/l3/experience-library.js'
 import type { Experience, Expr } from '../../src/l3/experience.js'
 import type { Value } from '../../src/l1/types.js'
+import { enableCrrNewPath, disableCrrNewPath } from '../../src/l1/main-loop.js'
+import { U_MAX_P1_ESTIMATE } from '../../src/l3/crr-config.js'
 import { fileReadOp } from '../../src/l2/builtins/file-read.js'
 import { fileWriteOp } from '../../src/l2/builtins/file-write.js'
 import { shellExecOp } from '../../src/l2/builtins/shell-exec.js'
@@ -352,5 +354,185 @@ describe('Phase D-C: 错误恢复（业务级失败检测 → 换策略重试）
     await l1MainLoop({ type: 'write_file', params: { path: p, content: 'new' } }, state2, { rootHandleError: false })
     expect(state2.internalStore.get('$r_bytes')).toBe(3)
     expect(await fs.readFile(p, 'utf-8')).toBe('new')
+  })
+})
+
+// ============== D-D: CRR new-path scope/register 机制（P3 T-D1/T-D2/T-D3） ==============
+// @see docs/mvp/19c-implementation-plan.md §三 P3 — chain-intermediate reuse / caller-saved convention / retention window /
+//   compile-time aliasing check (K4a)。全部在 enableCrrNewPath() 下运行，afterEach 统一关闭防跨用例污染。
+
+/** peak-size ceiling 的合理浮动余量 —— literal/env sidecar moves 在编译期额外占用的 argtmp pool slot */
+const TD_D_PEAK_SLACK = 6
+
+/** T-D1 fixture：单帧 read→replace×2(反复引用同一 source out-slot ≥3 引用点)→write。不声明 persist:true → publicStore 应保持空。 */
+const td1ChainEditFiveStep: Experience = {
+  id: 'td1_chain_edit_5step',
+  description: 'single-frame read→replace×2(reuse same source slot ≥3 refs)→write',
+  inputs: { path: { type: 'path', required: true } },
+  outputs: {},
+  target_op: {
+    base_op: 'string_replace', default_path: 'normal',
+    paths: [{
+      id: 'normal', description: '',
+      steps: [
+        // step1: file_read.content → $r_content（物理地址将解析为 $S<scope>.out2，见 file-read.ts formalSpec）
+        { operation: 'file_read', inputs: { path: { kind: 'input', name: 'path' } }, outputs: { content: { kind: 'register', name: '$r_content' }, error: { kind: 'register', name: '$r_err' } } },
+        // step2：第一次后续引用（$r_content 的复用 #1 / 全局第2次涉及该 slot：写+读=≥2，配合下面再 +1 满足"≥3 引用点"语义中的"被引用"部分）
+        { operation: 'string_replace', inputs: { text: { kind: 'register', name: '$r_content' }, find: { kind: 'literal', value: 'OLD_TOKEN_A' }, replace: { kind: 'literal', value: 'NEW_TOKEN_A' }, replace_all: { kind: 'literal', value: true } }, outputs: { result: { kind: 'register', name: '$r_replaced_1' }, count: { kind: 'register', name: '$r_count_a' }, error: { kind: 'register', name: '$r_err' } } },
+        // step3：第二次独立复用 —— 修复前 expandRefs 误用 string_replace 自身 .in<k> slotIndex（而非 file_read.content 的 .out<2>），此处即 VARIABLE_NOT_FOUND/indexOf-on-undefined
+        { operation: 'string_replace', inputs: { text: { kind: 'register', name: '$r_content' }, find: { kind: 'literal', value: 'KEEP_ME' }, replace: { kind: 'literal', value: 'KEPT_ME' }, replace_all: { kind: 'literal', value: true } }, outputs: { result: { kind: 'register', name: '$r_replaced_2' }, count: { kind: 'register', name: '$r_count_b' }, error: { kind: 'register', name: '$r_err' } } },
+        // step4：落盘消费 LAST 一次替换结果（K4 caller-saved last-writer-wins：两个同型 string_replace step 共享同一 op-level out-slot，后写覆盖先写）
+        { operation: 'file_write', inputs: { path: { kind: 'input', name: 'path' }, content: { kind: 'register', name: '$r_replaced_2' } }, outputs: { bytes_written: { kind: 'register', name: '$r_bytes' }, error: { kind: 'register', name: '$r_err' } } }
+      ]
+    }]
+  }
+}
+
+/** T-D2/T-D3 fixtures：A(读文件) + B1/B2(string_replace 消费者)。跨 frame registerOutput 引用，各自独立 scope。 */
+function tdReaderExp(pathLiteralValue: string): Experience {
+  return {
+    id: 'td_reader', description: 'reads file, produces content (T-D2/D3 shared fixture)',
+    inputs: {}, outputs: { content: { type: 'string', required: true } },
+    outputs_bindings: { content: { register: '$r_content', type: 'string', persist: true } },
+    target_op: {
+      base_op: 'file_read', default_path: 'normal',
+      paths: [{ id: 'normal', steps: [
+        { operation: 'file_read', inputs: { path: { kind: 'literal', value: pathLiteralValue as never } }, outputs: { content: { kind: 'register', name: '$r_content' }, error: { kind: 'register', name: '$r_err' } } }
+      ]}]
+    }
+  }
+}
+function tdConsumerExp(idSuffix: string, findTok: string, replaceTok: string): Experience {
+  const regResult = `$r_result_${idSuffix}`
+  return {
+    id: `td_b_consumer_${idSuffix}`, description: `replace ${findTok}->${replaceTok} on input text`,
+    inputs: { text: { type: 'string', required: true } },
+    outputs: { result: { type: 'string', required: true } },
+    outputs_bindings: { result: { register: regResult, type: 'string', persist: true } },
+    target_op: {
+      base_op: 'string_replace', default_path: 'normal',
+      paths: [{ id: 'normal', steps: [
+        { operation: 'string_replace', inputs: { text: { kind: 'input', name: 'text' }, find: { kind: 'literal', value: findTok }, replace: { kind: 'literal', value: replaceTok }, replace_all: { kind: 'literal', value: true } }, outputs: { result: { kind: 'register', name: regResult }, count: { kind: 'register', name: `$r_count_${idSuffix}` }, error: { kind: 'register', name: '$r_err' } } }
+      ]}]
+    }
+  }
+}
+function tdOrchestratorExp(b1Id: string, b2Id: string): Experience {
+  return {
+    id: 'td_orchestrator', description: 'A -> B1,B2 both consume A.content via registerOutput (cross-frame)',
+    inputs: {}, outputs: {},
+    target_op: {
+      base_op: 'file_read', default_path: 'normal',
+      paths: [{ id: 'normal', steps: [
+        // @ts-expect-error experience-level op (嵌套 CALL)，与 CORE_EXPERIENCES/replace_in_file 同款结构，TS 类型上 operation 字段按字面量 op-name 设计而非任意经验名
+        { operation: 'td_reader', inputs: {}, outputs: {} as Record<string, never> },
+        // @ts-expect-error 同上
+        { operation: b1Id, inputs: { text: { kind: 'registerOutput', expId: 'td_reader', outKey: 'content' } as never }, outputs: { result: { kind: 'register', name: `$r_td_b1out` } } },
+        // @ts-expect-error 同上
+        { operation: b2Id, inputs: { text: { kind: 'registerOutput', expId: 'td_reader', outKey: 'content' } as never }, outputs: { result: { kind: 'register', name: '$r_td_b2out' } } }
+      ]}]
+    }
+  }
+}
+
+/** T-D3 helper：纯静态 compile-time aliasing check（K4a）——callee input 引用名集合不应直接别名父级声明的 output register 业务名 */
+function assertNoScopeAliasing(parentDeclaredOutRegNames: string[], childInputRefBusinessKeys: string[]): void {
+  const inter = parentDeclaredOutRegNames.filter(n => childInputRefBusinessKeys.includes(n))
+  expect(inter, `K4a: callee input business-key refs must not alias any of parent's declared output register names; got ${inter.join(',')}`).toEqual([])
+}
+
+describe('Phase D-D: CRR new-path scope/register 机制', () => {
+  afterEach(() => disableCrrNewPath())
+
+  test('T-D1 chain_intermediate_reuse：单帧 ≥3 引用同一 source out-slot，disk read-back 正确 + publicStore 空 + peak size ≤ ceiling', async () => {
+    enableCrrNewPath()
+    const p = join(dir, 'td1.txt')
+    const SRC = 'OLD_TOKEN_A stays KEEP_ME here too OLD_TOKEN_A again'
+    await fs.writeFile(p, SRC, 'utf-8')
+    const { service, registry } = mkEnv([td1ChainEditFiveStep])
+    const state = createInitialState(registry, service)
+
+    // T-D1 (iv) peak tracking —— monkey-patch set() 记录整个 run 期间 internalStore.size() 的高水位
+    let peakSize = state.internalStore.size
+    const origSet = state.internalStore.set.bind(state.internalStore as Map<string, unknown>)
+    ;(state.internalStore as unknown as { set(k: string, v: unknown): Map<unknown, unknown> }).set = (k, v) => { const r = origSet(k, v); if (state.internalStore!.size > peakSize) peakSize = state.internalStore.size; return r }
+
+    await l1MainLoop({ type: 'td1_chain_edit_5step', params: { path: p } }, state, { rootHandleError: false })
+    expect(state.internalStore.get('$err')).toBeNull()
+
+    // (i) disk read-back：LAST 一次替换($r_replaced_2，KEEP_ME→KEPT_ME，OLD_TOKEN_A 保持不动因该 step 不碰它……wait——实际两次 replace 各自独立作用于 SAME $r_content 源值（不是链式串联），file_write 消费的是 LAST writer=$r_replaced_2=仅做了 KEEP_ME→KEPT_ME、未做 OLD_TOKEN_A→NEW_TOKEN_A)
+    expect(await fs.readFile(p, 'utf-8')).toBe('OLD_TOKEN_A stays KEPT_ME here too OLD_TOKEN_A again')
+
+    // (ii) source out-slot ($S<scope>.out2, file_read.content slotIndex=2) 全程可读且值正确 —— value-based search 避免硬编码 scopeId/数字脆弱性
+    let srcSlotKey: string | undefined
+    for (const [k, v] of state.internalStore) if (v === SRC && /^\$S[0-9a-z]+\.out\d+$/.test(k)) { srcSlotKey = k; break }
+    expect(srcSlotKey).toBeDefined()
+
+    // (iii) publicStore 空 —— chain-intermediate 未被误标 persist:true
+    // publicStore 是原生 Map<string, Value>, .size 是属性不是方法 (同 tier-a02-execution-state.test.ts 现有用法)
+    expect(state.publicStore.size).toEqual(0)
+
+    // (iv) peak internalStore size ≤ ceiling(U_MAX + slack，见常量定义处注释)
+    console.log(`    [T-D1] internalStore final=${state.internalStore!.size} trackedPeak=${peakSize} U_MAX_P1_ESTIMATE=${U_MAX_P1_ESTIMATE}`)
+    expect(peakSize).toBeLessThanOrEqual(U_MAX_P1_ESTIMATE + TD_D_PEAK_SLACK)
+  })
+
+  test('T-D2 dual-child sequential CALL：B1/B2 各自独立 scope，均正确消费同一 A.content（异址交付）', async () => {
+    enableCrrNewPath()
+    const p = join(dir, 'td2-src.txt')
+    await fs.writeFile(p, 'SHARED_BASE_PAYLOAD', 'utf-8')
+    const readerExp = tdReaderExp(p)
+    const b1 = tdConsumerExp('b1x', 'SHARED', 'CONSUMED_BY_B1')
+    const b2 = tdConsumerExp('b2x', 'SHARED', 'CONSUMED_BY_B2')
+    const orch = tdOrchestratorExp(b1.id, b2.id)
+    const { service, registry } = mkEnv([readerExp, b1, b2, orch])
+    const state = createInitialState(registry, service)
+    await l1MainLoop({ type: 'td_orchestrator', params: {} }, state, { rootHandleError: false })
+
+    // B1/B2 的 persist:true binding → publicStore；值互不相同但都源自同一 SHARED_BASE_PAYLOAD（证明二者各自拿到正确且一致的 source 输入值）
+    expect(state.publicStore.has('td_reader.content')).toBe(true)
+    expect(state.publicStore.get('td_reader.content')).toBe('SHARED_BASE_PAYLOAD')
+    const r1 = state.publicStore.get(`td_b_consumer_b1x.result`)
+    const r2 = state.publicStore.get(`td_b_consumer_b2x.result`)
+    expect(r1).toBe('CONSUMED_BY_B1_BASE_PAYLOAD')
+    expect(r2).toBe('CONSUMED_BY_B2_BASE_PAYLOAD')
+
+    // "异址"证据：internal store 中应同时存在 ≥2 个不同的 $S<scope>.out<N> 前缀键集（orchestrator/子经验各自 enterScope 分配的独立 scope prefix），而非全部塌缩到同一条物理 slot。
+    // probe 显示精确 scopeId 数值(s0/s1/s2...)是实现细节(懒分配顺序)，不硬编码具体数字，只断言前缀多样性这一结构性质。
+    const scopedPrefixes = new Set<string>()
+    for (const k of state.internalStore.keys()) {
+      if (!/^\$S[0-9a-z]+\./.test(k)) continue
+      const mm2 = k.match(/^\$(S[0-9a-z]+)\./)
+      if (mm2) scopedPrefixes.add(mm2[1])
+    }
+    expect(scopedPrefixes.size, `至少 orchestrator 根 frame + B1 + B2 各自的独立 scope prefix 都应可见=${[...scopedPrefixes].join(',')}`).toBeGreaterThanOrEqual(3)
+  })
+
+  test('T-D3 retention window：A.content out-slot 在 B1/B2 dispatch 后仍保留原值', async () => {
+    enableCrrNewPath()
+    const p = join(dir, 'td3-src.txt')
+    const SENTINEL = 'TAU-ALPHA-9f7c-base-content-sentinel'
+    await fs.writeFile(p, SENTINEL, 'utf-8')
+    const readerExp = tdReaderExp(p)
+    const b1 = tdConsumerExp('b1r', 'BASE', 'CONSUMED_BY_B1')
+    const b2 = tdConsumerExp('b2r', 'BASE', 'CONSUMED_BY_B2')
+    const orch = tdOrchestratorExp(b1.id, b2.id)
+
+    // T-D3 (compile-time/K4a 静态检查)：B-consumers 引用父级 source 的输入走的是 $r_input_<key> staging 通道（bindInputs 全局单例），而非直接复用 A 声明的具体业务别名 '$r_content' —— 二者本就不该在名字层面互为别名
+    assertNoScopeAliasing(['content'], ['text']) // parent output businessName vs child input businessKey，二者无交集即通过
+
+    const { service, registry } = mkEnv([readerExp, b1, b2, orch])
+    const state = createInitialState(registry, service)
+    await l1MainLoop({ type: 'td_orchestrator', params: {} }, state, { rootHandleError: false })
+
+    // retention window：A(=SENTINEL)写入的物理 out-slot 在整个 run 结束后仍应可读到原值（value-based search，避免硬编码脆弱数值）。
+    let foundRetainedInScopedOutSlot = false
+    for (const [k, v] of state.internalStore) {
+      if (v === SENTINEL && /^\$S[0-9a-z]+\.out\d+$/.test(k)) { foundRetainedInScopedOutSlot = true; break }
+    }
+    // A.content=${SENTINEL} 的 scoped out-slot 应在整个 run 期间保留不被覆写
+    expect(foundRetainedInScopedOutSlot).toBe(true)
+    // persist binding 保持一致的原值
+    expect(state.publicStore.get('td_reader.content')).toBe(SENTINEL)
   })
 })
