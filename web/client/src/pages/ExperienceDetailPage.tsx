@@ -75,13 +75,13 @@ export default function ExperienceDetailPage() {
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center gap-4">
+        <div className="px-6 flex items-center gap-4">
           <Link to="/" className="text-gray-500 hover:text-gray-700">← 返回</Link>
           <h1 className="text-xl font-bold text-gray-900">{detail.id}</h1>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="px-6 py-8">
         {/* Tab 切换 */}
         <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">

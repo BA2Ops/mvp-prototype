@@ -77,7 +77,7 @@ export default function ExperienceListPage() {
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="px-6 flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">经验设计工具</h1>
           {tab === 'experiences' && (
             <input
@@ -93,7 +93,7 @@ export default function ExperienceListPage() {
 
       {/* 选项卡 */}
       <div className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-6">
+        <div className="px-6">
           <nav className="flex gap-4">
             {([
               ['experiences', '经验'],
@@ -116,7 +116,7 @@ export default function ExperienceListPage() {
       </div>
 
       {/* 主内容区 */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
+      <main className="px-6 py-8">
         {tab === 'experiences' && (
           <>
             {loading && <p className="text-gray-500">加载中...</p>}

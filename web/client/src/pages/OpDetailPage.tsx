@@ -45,14 +45,14 @@ export default function OpDetailPage() {
     <div className="min-h-screen bg-gray-50">
       {/* 顶部导航 */}
       <header className="bg-white border-b border-gray-200 px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center gap-4">
+        <div className="px-6 flex items-center gap-4">
           <Link to="/" className="text-gray-500 hover:text-gray-700">← 返回</Link>
           <h1 className="text-xl font-bold text-gray-900">{op.name}</h1>
           <span className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 rounded">L2 Operation</span>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
+      <main className="px-6 py-8 space-y-6">
         {/* 描述 */}
         <section className="bg-white rounded-lg border border-gray-200 p-6">
           <h2 className="text-sm font-semibold text-gray-500 mb-2">描述</h2>
