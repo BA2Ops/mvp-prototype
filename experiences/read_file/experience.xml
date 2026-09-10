@@ -1,4 +1,4 @@
-﻿<experience id="read_file" description="读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。">
+﻿<experience id="read_file" description="读取文件内容。文件不存在时错误写入 error 寄存器(数据化,不抛出)。">
   <inputs>
     <param name="path" type="path" required=""/>
   </inputs>
@@ -11,8 +11,8 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="content" as="$r_content"/>
-        <output name="error" as="$r_err"/>
+        <output name="content" as="content"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>

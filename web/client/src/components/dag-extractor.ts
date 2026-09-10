@@ -2,12 +2,12 @@ import type { XmlExperience } from '../../../shared/xml-schema'
 
 export interface DagNodeInput {
   name: string
-  source: string  // 简短描述:fromInput:xxx / fromNode:id.output / literal:value
+  source: string  // 简短描述:fromInput:xxx / fromNode:id.output / literal:value / expr:is_null(probe.error)
 }
 
 export interface DagNodeOutput {
   name: string
-  as: string      // 目标寄存器名
+  as: string      // 业务变量名(L3 编译时映射到寄存器)
 }
 
 export interface DagExpInput {
@@ -27,7 +27,7 @@ export interface DagNode {
   kind: 'op' | 'experience' | 'condition' | 'terminal' | 'start' | 'end'
   opName?: string
   expName?: string
-  varName?: string
+  fromNode?: string
   condition?: string
   thenPath?: string
   elsePath?: string
@@ -45,16 +45,65 @@ interface DagEdge {
   kind: 'sequence' | 'data' | 'condition'
 }
 
-function describeSource(src: { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }): string {
+function describeSource(src: { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }, varToNodeOutput: Map<string, string>): string {
   if (src.kind === 'fromInput') return `input:${src.inputName}`
   if (src.kind === 'fromNode') return `${src.nodeId}.${src.outputName}`
   if (src.kind === 'literal') {
     const v = src.value
     if (v === null) return 'literal:null'
     if (typeof v === 'string') return `literal:"${v.length > 20 ? v.slice(0, 20) + '…' : v}"`
+    // Expr 对象 → 可读表达式
+    if (typeof v === 'object' && v !== null && 'type' in v && (v as { type: string }).type === 'op') {
+      return `expr:${exprToString(v, varToNodeOutput)}`
+    }
     return `literal:${JSON.stringify(v)}`
   }
   return '?'
+}
+
+/**
+ * 将 Expr 对象转换为可读的表达式字符串
+ *
+ * - op → name(arg1, arg2, ...)
+ * - var → nodeId.outputName(解析业务变量名到节点输出引用)或变量名
+ * - literal → JSON 值
+ */
+function exprToString(expr: unknown, varToNodeOutput: Map<string, string>): string {
+  if (expr === null || typeof expr !== 'object') return String(expr)
+  const e = expr as { type: string; name?: string; value?: unknown; args?: unknown[] }
+  if (e.type === 'literal') {
+    const v = e.value
+    if (typeof v === 'string') return `"${v}"`
+    return JSON.stringify(v)
+  }
+  if (e.type === 'var') {
+    // 解析业务变量名到节点输出引用(如 error → probe.error)
+    return varToNodeOutput.get(e.name ?? '') ?? e.name ?? '?'
+  }
+  if (e.type === 'op') {
+    const args = (e.args ?? []).map(a => exprToString(a, varToNodeOutput)).join(', ')
+    return `${e.name}(${args})`
+  }
+  return JSON.stringify(expr)
+}
+
+/**
+ * 构建业务变量名 → 节点输出引用(nodeId.outputName)映射
+ *
+ * 多个节点写同一业务变量名时,取第一个声明的节点。
+ * 这使得表达式中的 var 引用能展示为具体的节点输出,而非抽象的业务变量名或寄存器名。
+ */
+function buildVarToNodeOutput(xmlExp: XmlExperience): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const node of xmlExp.nodes) {
+    if (node.kind === 'condition') continue
+    for (const output of node.outputs) {
+      if (!map.has(output.as)) {
+        map.set(output.as, `${node.id}.${output.name}`)
+      }
+    }
+  }
+  return map
 }
 
 /**
@@ -72,25 +121,26 @@ function describeSource(src: { kind: string; inputName?: string; nodeId?: string
  * - condition: 条件分支边(condition → path 首节点 / 路径END)
  */
 export function extractDag(xmlExp: XmlExperience): { nodes: DagNode[]; edges: DagEdge[] } {
+  const varToNodeOutput = buildVarToNodeOutput(xmlExp)
   const nodes: DagNode[] = xmlExp.nodes.map(n => {
     if (n.kind === 'op') {
       return {
         id: n.id, kind: 'op', opName: n.opName,
-        inputs: n.inputs.map(i => ({ name: i.name, source: describeSource(i.source as { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }) })),
+        inputs: n.inputs.map(i => ({ name: i.name, source: describeSource(i.source as { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }, varToNodeOutput) })),
         outputs: n.outputs.map(o => ({ name: o.name, as: o.as }))
       }
     }
     if (n.kind === 'experience') {
       return {
         id: n.id, kind: 'experience', expName: n.experienceId,
-        inputs: n.inputs.map(i => ({ name: i.name, source: describeSource(i.source as { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }) })),
+        inputs: n.inputs.map(i => ({ name: i.name, source: describeSource(i.source as { kind: string; inputName?: string; nodeId?: string; outputName?: string; value?: unknown }, varToNodeOutput) })),
         outputs: n.outputs.map(o => ({ name: o.name, as: o.as }))
       }
     }
     return {
       id: n.id,
       kind: 'condition',
-      varName: n.varName,
+      fromNode: n.fromNode,
       condition: n.condition,
       thenPath: n.thenPath,
       elsePath: n.elsePath
@@ -99,19 +149,6 @@ export function extractDag(xmlExp: XmlExperience): { nodes: DagNode[]; edges: Da
 
   const edges: DagEdge[] = []
   const extraNodes: DagNode[] = []
-
-  // ============== 1. 构建"变量 → [产出节点]"映射(多生产者) ==============
-  const varProducers = new Map<string, string[]>()
-  for (const node of xmlExp.nodes) {
-    if (node.kind === 'condition') continue
-    for (const output of node.outputs) {
-      if (output.as) {
-        const existing = varProducers.get(output.as) ?? []
-        existing.push(node.id)
-        varProducers.set(output.as, existing)
-      }
-    }
-  }
 
   // ============== 2. path steps 顺序边 + 预处理节点链 ==============
 
@@ -189,15 +226,19 @@ export function extractDag(xmlExp: XmlExperience): { nodes: DagNode[]; edges: Da
   for (const node of xmlExp.nodes) {
     if (node.kind !== 'condition') continue
 
-    // 4a. 条件变量依赖边:所有产出该变量的 op → 条件节点
-    const producers = varProducers.get(node.varName) ?? []
-    for (const producer of producers) {
-      edges.push({
-        from: producer,
-        to: node.id,
-        label: `${node.varName}?`,
-        kind: 'data'
-      })
+    // 4a. 条件变量依赖边:解析 fromNode "nodeId.outputName" → 数据依赖边
+    if (node.fromNode) {
+      const dot = node.fromNode.indexOf('.')
+      const condSrcNodeId = dot >= 0 ? node.fromNode.substring(0, dot) : node.fromNode
+      const condSrcOutputName = dot >= 0 ? node.fromNode.substring(dot + 1) : ''
+      if (condSrcNodeId) {
+        edges.push({
+          from: condSrcNodeId,
+          to: node.id,
+          label: `${condSrcOutputName}?`,
+          kind: 'data'
+        })
+      }
     }
 
     // 4b. then 分支边(仅非空路径;空路径在 section 7 处理)

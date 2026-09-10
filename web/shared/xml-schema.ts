@@ -64,7 +64,7 @@ export type NodeInput = z.infer<typeof NodeInputSchema>
 export const NodeOutputSchema = z.object({
   /** 输出端口名(op formalSpec 的 output businessName) */
   name: z.string().min(1),
-  /** 输出绑定到的寄存器名($r_<name>),定义 op 输出→寄存器的映射,供编译器生成 move 指令 */
+  /** 输出绑定到的业务变量名,编译器自动分配寄存器;多节点写同一变量名则共享寄存器 */
   as: z.string().min(1)
 })
 export type NodeOutput = z.infer<typeof NodeOutputSchema>
@@ -93,8 +93,8 @@ export type ExperienceNode = z.infer<typeof ExperienceNodeSchema>
 export const ConditionNodeSchema = z.object({
   kind: z.literal('condition'),
   id: z.string().min(1),
-  /** 关联的寄存器名($r_<name>),来自上游节点输出的 as 值 */
-  varName: z.string().min(1),
+  /** 条件判断的来源节点输出引用(nodeId.outputName 格式),编译器解析为对应寄存器 */
+  fromNode: z.string().min(1),
   /** 判断条件:真值判断 */
   condition: z.enum(['truthy', 'falsy']).default('truthy'),
   /** 条件为真时走的路径 ID */

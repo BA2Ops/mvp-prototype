@@ -13,8 +13,8 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="content" as="$r_content"/>
-        <output name="error" as="$r_err"/>
+        <output name="content" as="content"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="replace" opName="string_replace">
@@ -25,9 +25,9 @@
         <input name="replace_all" literal/>
       </inputs>
       <outputs>
-        <output name="result" as="$r_replaced"/>
-        <output name="count" as="$r_count"/>
-        <output name="error" as="$r_err"/>
+        <output name="result" as="replaced"/>
+        <output name="count" as="count"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="write" opName="file_write">
@@ -36,8 +36,8 @@
         <input name="content" fromNode="replace.result"/>
       </inputs>
       <outputs>
-        <output name="bytes_written" as="$r_bytes"/>
-        <output name="error" as="$r_err"/>
+        <output name="bytes_written" as="bytes"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>

@@ -14,10 +14,10 @@
         <input name="args" fromInput="args"/>
       </inputs>
       <outputs>
-        <output name="stdout" as="$r_stdout"/>
-        <output name="stderr" as="$r_stderr"/>
-        <output name="exit_code" as="$r_exit"/>
-        <output name="error" as="$r_err"/>
+        <output name="stdout" as="stdout"/>
+        <output name="stderr" as="stderr"/>
+        <output name="exit_code" as="exit"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>

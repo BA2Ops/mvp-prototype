@@ -200,7 +200,7 @@ function transformNode(raw: Record<string, unknown>): Record<string, unknown> | 
     return {
       kind: 'condition',
       id: String(node.id ?? ''),
-      varName: String(node.varName ?? ''),
+      fromNode: String(node.fromNode ?? ''),
       condition: String(node.condition ?? 'truthy'),
       thenPath: String(node.thenPath ?? ''),
       elsePath: String(node.elsePath ?? '')
@@ -475,7 +475,7 @@ function nodeToXmlObject(node: XmlExperience['nodes'][number]): Record<string, u
   }
 
   // condition
-  base.varName = node.varName
+  base.fromNode = node.fromNode
   base.condition = node.condition
   base.thenPath = node.thenPath
   base.elsePath = node.elsePath
@@ -491,7 +491,14 @@ function inputToXmlObject(input: { name: string; source: unknown }): Record<stri
   } else if (src.kind === 'fromNode') {
     obj.fromNode = `${src.nodeId}.${src.outputName}`
   } else if (src.kind === 'literal') {
-    obj.literal = src.value === undefined ? '' : String(src.value)
+    if (src.value === undefined) {
+      obj.literal = ''
+    } else if (typeof src.value === 'object') {
+      // 对象/数组用 JSON 序列化,解析时通过 JSON.parse 还原
+      obj.literal = JSON.stringify(src.value)
+    } else {
+      obj.literal = String(src.value)
+    }
   }
 
   return obj

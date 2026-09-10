@@ -1,6 +1,6 @@
 {
   "id": "read_file",
-  "description": "读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。",
+  "description": "读取文件内容。文件不存在时错误写入 error 寄存器(数据化,不抛出)。",
   "tags": [
     "file",
     "read"

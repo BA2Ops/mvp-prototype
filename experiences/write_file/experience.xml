@@ -13,8 +13,8 @@
         <input name="content" fromInput="content"/>
       </inputs>
       <outputs>
-        <output name="bytes_written" as="$r_bytes"/>
-        <output name="error" as="$r_err"/>
+        <output name="bytes_written" as="bytes"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>

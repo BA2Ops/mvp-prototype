@@ -157,7 +157,7 @@ function NodeLabel({ n }: { n: DagNode }) {
     ? n.opName
     : n.kind === 'experience'
     ? n.expName
-    : `cond: ${n.varName} (${n.condition})`
+    : `cond: ${n.fromNode} (${n.condition})`
 
   return (
     <div className="px-2 py-1 overflow-hidden">

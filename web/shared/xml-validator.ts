@@ -353,7 +353,7 @@ function checkR5(graph: NodeGraph, exp: XmlExperience): ValidationError[] {
 // ============== R6: 条件节点单变量判断 ==============
 
 /**
- * R6: 条件节点必须恰好关联一个局部变量
+ * R6: 条件节点必须引用一个有效的节点输出(fromNode)
  */
 function checkR6(graph: NodeGraph, exp: XmlExperience): ValidationError[] {
   const errors: ValidationError[] = []
@@ -361,36 +361,40 @@ function checkR6(graph: NodeGraph, exp: XmlExperience): ValidationError[] {
   for (const node of exp.nodes) {
     if (node.kind !== 'condition') continue
 
-    // 检查 varName 是否存在
-    if (!node.varName || node.varName.trim() === '') {
+    // 检查 fromNode 是否存在
+    if (!node.fromNode || node.fromNode.trim() === '') {
       errors.push({
         rule: 'R6',
-        message: `条件节点 "${node.id}" 未关联任何局部变量`,
+        message: `条件节点 "${node.id}" 未引用任何节点输出(fromNode)`,
         nodeIds: [node.id]
       })
       continue
     }
 
-    // 检查 varName 是否来自某个节点的输出(as 字段,寄存器名)
-    let foundSource = false
-    for (const [, n] of graph.nodes) {
-      if (n.kind === 'condition') continue
-      if (n.kind === 'op' || n.kind === 'experience') {
-        if (n.outputs.some(o => o.as === node.varName)) {
-          foundSource = true
-          break
-        }
-      }
+    // 解析 fromNode: "nodeId.outputName"
+    const dot = node.fromNode.indexOf('.')
+    const nodeId = dot >= 0 ? node.fromNode.substring(0, dot) : node.fromNode
+    const outputName = dot >= 0 ? node.fromNode.substring(dot + 1) : ''
+
+    // 检查引用的节点是否存在
+    const srcNode = graph.nodes.get(nodeId)
+    if (!srcNode) {
+      errors.push({
+        rule: 'R6',
+        message: `条件节点 "${node.id}" 引用了不存在的节点 "${nodeId}"`,
+        nodeIds: [node.id]
+      })
+      continue
     }
 
-    if (!foundSource) {
-      // 也可能是经验输入参数($r_input_<name>),检查 inputs
-      const isInput = exp.inputs.some(i => `$r_input_${i.name}` === node.varName || i.name === node.varName)
-      if (!isInput) {
+    // 检查输出端口是否存在
+    if (srcNode.kind === 'op' || srcNode.kind === 'experience') {
+      const hasOutput = srcNode.outputs.some(o => o.name === outputName)
+      if (!hasOutput && outputName !== 'error') {
         errors.push({
           rule: 'R6',
-          message: `条件节点 "${node.id}" 关联的变量 "${node.varName}" 没有对应的节点输出或输入参数来源`,
-          nodeIds: [node.id]
+          message: `条件节点 "${node.id}" 引用了节点 "${nodeId}" 的不存在的输出端口 "${outputName}"`,
+          nodeIds: [node.id, nodeId]
         })
       }
     }

@@ -12,6 +12,14 @@
  *   汇聚参数意图 → 各分支落点与收尾绑定
  *   受控回环 → 递归自嵌套结构 + 终止 judgment
  *
+ * 寄存器自动分配:
+ *   XML 中 as 属性为业务变量名(不含 $r_ 前缀)。
+ *   编译器为每个业务变量名自动分配寄存器:
+ *   - error → $r_err (ERROR_REGISTER)
+ *   - 其他 → $r_<name>
+ *   多节点写同一业务变量名则共享寄存器。
+ *   表达式中的 var 引用也通过此映射解析。
+ *
  * @see tasks/phase-f1/README.md F1.4
  * @see docs/mvp/18-xml-to-l3-compiler.md §二
  */
@@ -74,6 +82,91 @@ const noError = (): Expr => op('is_null', reg(ERROR_REGISTER))
 /** 通用错误输出声明 */
 const errOut = { error: { kind: 'register' as const, name: ERROR_REGISTER } }
 
+// ============== 辅助:业务变量 → 寄存器映射 ==============
+
+/**
+ * 构建业务变量名 → 寄存器名映射
+ *
+ * - error → $r_err (ERROR_REGISTER)
+ * - 其他 → $r_<name>
+ */
+function buildVarToRegisterMap(exp: XmlExperience): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const node of exp.nodes) {
+    if (node.kind === 'condition') continue
+    for (const output of node.outputs) {
+      if (!map.has(output.as)) {
+        if (output.as === 'error') {
+          map.set('error', ERROR_REGISTER)
+        } else {
+          map.set(output.as, `$r_${output.as}`)
+        }
+      }
+    }
+  }
+  return map
+}
+
+/**
+ * 将业务变量名解析为寄存器名
+ */
+function toRegister(varName: string, varToRegister: Map<string, string>): string {
+  const reg = varToRegister.get(varName)
+  if (reg) return reg
+  // 兜底:如果映射表中没有,按规则生成
+  if (varName === 'error') return ERROR_REGISTER
+  return `$r_${varName}`
+}
+
+// ============== 辅助:表达式变量名解析 ==============
+
+/**
+ * 递归遍历 Expr 树,将 var 节点的 name 从业务变量名替换为寄存器名
+ */
+function resolveExprVars(expr: Expr, varToRegister: Map<string, string>): Expr {
+  if (expr.type === 'var') {
+    // 检查是否是业务变量名(在映射表中)
+    if (varToRegister.has(expr.name)) {
+      return { type: 'var', name: toRegister(expr.name, varToRegister) }
+    }
+    // 不是业务变量名,保持原样(可能是输入参数引用等)
+    return expr
+  }
+  if (expr.type === 'op') {
+    return {
+      type: 'op',
+      name: expr.name,
+      args: expr.args.map(a => resolveExprVars(a, varToRegister))
+    }
+  }
+  // literal 或其他类型,原样返回
+  return expr
+}
+
+/**
+ * 递归遍历值中的所有 Expr 对象(可能嵌套在 literal 参数中)
+ */
+function resolveExprInValue(value: unknown, varToRegister: Map<string, string>): unknown {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>
+    // 检查是否是 Expr 对象
+    if (obj.type === 'var' || obj.type === 'op' || obj.type === 'literal') {
+      return resolveExprVars(obj as Expr, varToRegister)
+    }
+    // 递归处理对象属性
+    const result: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(obj)) {
+      result[k] = resolveExprInValue(v, varToRegister)
+    }
+    return result
+  }
+  if (Array.isArray(value)) {
+    return value.map(v => resolveExprInValue(v, varToRegister))
+  }
+  return value
+}
+
 // ============== 辅助:ParamSource → ParamRef ==============
 
 /**
@@ -96,18 +189,18 @@ function sourceToParamRef(source: ParamSource): ParamRef {
 // ============== 辅助:节点输出映射 ==============
 
 /**
- * 构建节点输出映射:nodeId.outputName → 业务变量名($r_<as>)
+ * 构建节点输出映射:nodeId.outputName → 寄存器名
  */
-function buildOutputMap(exp: XmlExperience): Map<string, string> {
+function buildOutputMap(exp: XmlExperience, varToRegister: Map<string, string>): Map<string, string> {
   const map = new Map<string, string>()
 
   for (const node of exp.nodes) {
     if (node.kind === 'condition') continue
 
     for (const output of node.outputs) {
-      // 输出绑定:output.name → output.as(寄存器名)
+      // 输出绑定:output.name → 寄存器名(通过业务变量名解析)
       const key = `${node.id}.${output.name}`
-      map.set(key, output.as)
+      map.set(key, toRegister(output.as, varToRegister))
     }
 
     // 错误输出:nodeId.error → $r_err
@@ -118,7 +211,7 @@ function buildOutputMap(exp: XmlExperience): Map<string, string> {
 }
 
 /**
- * 解析 ParamRef 中的 __PENDING__ 占位符,替换为实际业务变量名
+ * 解析 ParamRef 中的 __PENDING__ 占位符,替换为实际寄存器名
  */
 function resolveParamRef(ref: ParamRef, outputMap: Map<string, string>): ParamRef {
   if (ref.kind === 'register' && ref.name.startsWith('__PENDING__')) {
@@ -195,7 +288,11 @@ function classifyNodes(exp: XmlExperience): {
 /**
  * 将前置节点编译为 PreProcessing[]
  */
-function compilePreProcessing(nodes: XmlNode[], outputMap: Map<string, string>): PreProcessing[] {
+function compilePreProcessing(
+  nodes: XmlNode[],
+  outputMap: Map<string, string>,
+  varToRegister: Map<string, string>
+): PreProcessing[] {
   const result: PreProcessing[] = []
 
   for (const node of nodes) {
@@ -203,12 +300,17 @@ function compilePreProcessing(nodes: XmlNode[], outputMap: Map<string, string>):
 
     const inputs: Record<string, ParamRef> = {}
     for (const input of node.inputs) {
-      inputs[input.name] = resolveParamRef(sourceToParamRef(input.source), outputMap)
+      let ref = sourceToParamRef(input.source)
+      // 对 literal 类型,解析其中的表达式变量名
+      if (ref.kind === 'literal' && ref.value !== undefined) {
+        ref = { kind: 'literal', value: resolveExprInValue(ref.value, varToRegister) as Value }
+      }
+      inputs[input.name] = resolveParamRef(ref, outputMap)
     }
 
     const outputs: Record<string, ParamRef> = {}
     for (const output of node.outputs) {
-      outputs[output.name] = { kind: 'register', name: output.as }
+      outputs[output.name] = { kind: 'register', name: toRegister(output.as, varToRegister) }
     }
     // 错误输出
     outputs.error = { kind: 'register', name: ERROR_REGISTER }
@@ -229,25 +331,35 @@ function compilePreProcessing(nodes: XmlNode[], outputMap: Map<string, string>):
 
 /**
  * 将条件节点编译为 ConditionalJudgment[]
+ *
+ * 条件节点的 fromNode 引用解析为寄存器名
  */
 function compileJudgments(
   conditions: XmlNode[],
-  exp: XmlExperience
+  exp: XmlExperience,
+  outputMap: Map<string, string>
 ): ConditionalJudgment[] {
   const result: ConditionalJudgment[] = []
 
   for (const node of conditions) {
     if (node.kind !== 'condition') continue
 
+    // 解析 fromNode: "nodeId.outputName" → 寄存器名
+    const dot = node.fromNode.indexOf('.')
+    const nodeId = dot >= 0 ? node.fromNode.substring(0, dot) : node.fromNode
+    const outputName = dot >= 0 ? node.fromNode.substring(dot + 1) : ''
+    const key = `${nodeId}.${outputName}`
+    const registerName = outputMap.get(key) ?? ERROR_REGISTER
+
     // 构造条件表达式
     let conditionExpr: Expr
     if (node.condition === 'truthy') {
       // varName 为真时走 thenPath
-      conditionExpr = op('is_truthy', reg(node.varName))
+      conditionExpr = op('is_truthy', reg(registerName))
     } else {
       // varName 为假时走 thenPath(即 is_truthy 为真时走 elsePath)
       // 取反:then/else 交换
-      conditionExpr = op('not', op('is_truthy', reg(node.varName)))
+      conditionExpr = op('not', op('is_truthy', reg(registerName)))
     }
 
     result.push({
@@ -269,7 +381,8 @@ function compileJudgments(
 function compileTargetOp(
   exp: XmlExperience,
   targetNodes: XmlNode[],
-  outputMap: Map<string, string>
+  outputMap: Map<string, string>,
+  varToRegister: Map<string, string>
 ): TargetOp {
   const paths: TargetOpPath[] = []
 
@@ -283,12 +396,17 @@ function compileTargetOp(
 
       const inputs: Record<string, ParamRef> = {}
       for (const input of node.inputs) {
-        inputs[input.name] = resolveParamRef(sourceToParamRef(input.source), outputMap)
+        let ref = sourceToParamRef(input.source)
+        // 对 literal 类型,解析其中的表达式变量名
+        if (ref.kind === 'literal' && ref.value !== undefined) {
+          ref = { kind: 'literal', value: resolveExprInValue(ref.value, varToRegister) as Value }
+        }
+        inputs[input.name] = resolveParamRef(ref, outputMap)
       }
 
       const outputs: Record<string, ParamRef> = {}
       for (const output of node.outputs) {
-        outputs[output.name] = { kind: 'register', name: output.as }
+        outputs[output.name] = { kind: 'register', name: toRegister(output.as, varToRegister) }
       }
       outputs.error = { kind: 'register', name: ERROR_REGISTER }
 
@@ -329,16 +447,19 @@ function compileTargetOp(
 
 /**
  * 将 XML 输出绑定编译为 L3 OutputBinding
+ *
+ * fromNode 引用解析为寄存器名(通过节点输出的 as 业务变量名)
  */
 function compileOutputBindings(
   bindings: XmlOutputBinding[],
-  exp: XmlExperience
+  exp: XmlExperience,
+  varToRegister: Map<string, string>
 ): Record<string, OutputBinding> | undefined {
   if (bindings.length === 0) return undefined
 
   const result: Record<string, OutputBinding> = {}
   for (const b of bindings) {
-    // 解析 fromNode: "nodeId.outputName" → 查找节点的 output.as(寄存器名)
+    // 解析 fromNode: "nodeId.outputName" → 查找节点的 output.as(业务变量名)→ 寄存器名
     const dot = b.fromNode.indexOf('.')
     const nodeId = dot >= 0 ? b.fromNode.substring(0, dot) : b.fromNode
     const outputName = dot >= 0 ? b.fromNode.substring(dot + 1) : ''
@@ -348,7 +469,7 @@ function compileOutputBindings(
     if (node && (node.kind === 'op' || node.kind === 'experience')) {
       const output = node.outputs.find(o => o.name === outputName)
       if (output) {
-        register = output.as // 寄存器名来自节点输出的 as 值
+        register = toRegister(output.as, varToRegister) // 通过业务变量名解析为寄存器名
       }
     }
 
@@ -387,21 +508,22 @@ function compileFailureMessages(
  * 假设输入已通过 R1-R6 校验。
  */
 export function compileXmlToL3(xmlExp: XmlExperience): Experience {
-  const outputMap = buildOutputMap(xmlExp)
+  const varToRegister = buildVarToRegisterMap(xmlExp)
+  const outputMap = buildOutputMap(xmlExp, varToRegister)
   const { preNodes, targetNodes, conditionNodes } = classifyNodes(xmlExp)
 
   // 编译各部分
   const preProcessing = preNodes.length > 0
-    ? compilePreProcessing(preNodes, outputMap)
+    ? compilePreProcessing(preNodes, outputMap, varToRegister)
     : undefined
 
   const conditionalJudgment = conditionNodes.length > 0
-    ? compileJudgments(conditionNodes, xmlExp)
+    ? compileJudgments(conditionNodes, xmlExp, outputMap)
     : undefined
 
-  const targetOp = compileTargetOp(xmlExp, targetNodes, outputMap)
+  const targetOp = compileTargetOp(xmlExp, targetNodes, outputMap, varToRegister)
 
-  const outputsBindings = compileOutputBindings(xmlExp.outputBindings, xmlExp)
+  const outputsBindings = compileOutputBindings(xmlExp.outputBindings, xmlExp, varToRegister)
   const responses = compileFailureMessages(xmlExp)
 
   // 输入参数 schema

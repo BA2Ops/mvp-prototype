@@ -14,7 +14,7 @@ import type { XmlExperience } from '../../shared/xml-schema.js'
 
 export const readFileXml: XmlExperience = {
   id: 'read_file',
-  description: '读取文件内容。文件不存在时错误写入 $r_err(数据化,不抛出)。',
+  description: '读取文件内容。文件不存在时错误写入 error 寄存器(数据化,不抛出)。',
   inputs: [
     { name: 'path', type: 'path', required: true }
   ],
@@ -30,8 +30,8 @@ export const readFileXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'content', as: '$r_content' },
-        { name: 'error', as: '$r_err' }
+        { name: 'content', as: 'content' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -77,8 +77,8 @@ export const readFileWithDefaultXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'content', as: '$r_content' },
-        { name: 'error', as: '$r_err' }
+        { name: 'content', as: 'content' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -89,14 +89,14 @@ export const readFileWithDefaultXml: XmlExperience = {
         { name: 'expr', source: { kind: 'fromInput', inputName: 'default_content' } }
       ],
       outputs: [
-        { name: 'result', as: '$r_content' },
-        { name: 'error', as: '$r_err' }
+        { name: 'result', as: 'content' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
       kind: 'condition',
       id: 'is_enoent',
-      varName: '$r_err',
+      fromNode: 'try_read.error',
       condition: 'truthy',
       thenPath: 'use_default',
       elsePath: 'normal'
@@ -112,7 +112,7 @@ export const readFileWithDefaultXml: XmlExperience = {
     },
     {
       id: 'normal',
-      description: '读取成功 → content 已在 $r_content',
+      description: '读取成功 → content 已就绪',
       response: '已读取 {path} 的内容',
       steps: []
     }
@@ -145,8 +145,8 @@ export const checkFileExistsXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'content', as: '$r_probe' },
-        { name: 'error', as: '$r_err' }
+        { name: 'content', as: 'probe' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -154,11 +154,11 @@ export const checkFileExistsXml: XmlExperience = {
       id: 'calc_exists',
       opName: 'evaluate_expr',
       inputs: [
-        { name: 'expr', source: { kind: 'literal', value: { type: 'op', name: 'is_null', args: [{ type: 'var', name: '$r_err' }] } } }
+        { name: 'expr', source: { kind: 'literal', value: { type: 'op', name: 'is_null', args: [{ type: 'var', name: 'error' }] } } }
       ],
       outputs: [
-        { name: 'result', as: '$r_exists' },
-        { name: 'error', as: '$r_err' }
+        { name: 'result', as: 'exists' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -166,7 +166,7 @@ export const checkFileExistsXml: XmlExperience = {
   paths: [
     {
       id: 'normal',
-      description: 'exists = is_null($r_err)',
+      description: 'exists = is_null(error)',
       response: '文件 {path} 存在检查完成:{exists}',
       steps: [{ node: 'calc_exists' }]
     }
@@ -201,8 +201,8 @@ export const writeFileXml: XmlExperience = {
         { name: 'content', source: { kind: 'fromInput', inputName: 'content' } }
       ],
       outputs: [
-        { name: 'bytes_written', as: '$r_bytes' },
-        { name: 'error', as: '$r_err' }
+        { name: 'bytes_written', as: 'bytes' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -246,8 +246,8 @@ export const safeWriteXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'content', as: '$r_existing' },
-        { name: 'error', as: '$r_err' }
+        { name: 'content', as: 'existing' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -259,8 +259,8 @@ export const safeWriteXml: XmlExperience = {
         { name: 'content', source: { kind: 'fromInput', inputName: 'content' } }
       ],
       outputs: [
-        { name: 'bytes_written', as: '$r_bytes' },
-        { name: 'error', as: '$r_err' }
+        { name: 'bytes_written', as: 'bytes' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -271,14 +271,14 @@ export const safeWriteXml: XmlExperience = {
         { name: 'expr', source: { kind: 'literal', value: 0 } }
       ],
       outputs: [
-        { name: 'result', as: '$r_bytes' },
-        { name: 'error', as: '$r_err' }
+        { name: 'result', as: 'bytes' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
       kind: 'condition',
       id: 'already_exists',
-      varName: '$r_err',
+      fromNode: 'probe_existing.error',
       condition: 'falsy',
       thenPath: 'do_write',
       elsePath: 'abort'
@@ -330,9 +330,9 @@ export const findFilesXml: XmlExperience = {
         { name: 'cwd', source: { kind: 'fromInput', inputName: 'cwd' } }
       ],
       outputs: [
-        { name: 'matches', as: '$r_matches' },
-        { name: 'count', as: '$r_count' },
-        { name: 'error', as: '$r_err' }
+        { name: 'matches', as: 'matches' },
+        { name: 'count', as: 'count' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -376,9 +376,9 @@ export const searchInFilesXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'matches', as: '$r_matches' },
-        { name: 'count', as: '$r_count' },
-        { name: 'error', as: '$r_err' }
+        { name: 'matches', as: 'matches' },
+        { name: 'count', as: 'count' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -422,10 +422,10 @@ export const runShellXml: XmlExperience = {
         { name: 'args', source: { kind: 'fromInput', inputName: 'args' } }
       ],
       outputs: [
-        { name: 'stdout', as: '$r_stdout' },
-        { name: 'stderr', as: '$r_stderr' },
-        { name: 'exit_code', as: '$r_exit' },
-        { name: 'error', as: '$r_err' }
+        { name: 'stdout', as: 'stdout' },
+        { name: 'stderr', as: 'stderr' },
+        { name: 'exit_code', as: 'exit' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],
@@ -468,8 +468,8 @@ export const replaceInFileXml: XmlExperience = {
         { name: 'path', source: { kind: 'fromInput', inputName: 'path' } }
       ],
       outputs: [
-        { name: 'content', as: '$r_content' },
-        { name: 'error', as: '$r_err' }
+        { name: 'content', as: 'content' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -483,9 +483,9 @@ export const replaceInFileXml: XmlExperience = {
         { name: 'replace_all', source: { kind: 'literal', value: true } }
       ],
       outputs: [
-        { name: 'result', as: '$r_replaced' },
-        { name: 'count', as: '$r_count' },
-        { name: 'error', as: '$r_err' }
+        { name: 'result', as: 'replaced' },
+        { name: 'count', as: 'count' },
+        { name: 'error', as: 'error' }
       ]
     },
     {
@@ -497,8 +497,8 @@ export const replaceInFileXml: XmlExperience = {
         { name: 'content', source: { kind: 'fromNode', nodeId: 'replace', outputName: 'result' } }
       ],
       outputs: [
-        { name: 'bytes_written', as: '$r_bytes' },
-        { name: 'error', as: '$r_err' }
+        { name: 'bytes_written', as: 'bytes' },
+        { name: 'error', as: 'error' }
       ]
     }
   ],

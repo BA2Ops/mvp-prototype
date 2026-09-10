@@ -14,9 +14,9 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="matches" as="$r_matches"/>
-        <output name="count" as="$r_count"/>
-        <output name="error" as="$r_err"/>
+        <output name="matches" as="matches"/>
+        <output name="count" as="count"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>

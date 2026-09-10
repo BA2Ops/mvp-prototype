@@ -12,8 +12,8 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="content" as="$r_content"/>
-        <output name="error" as="$r_err"/>
+        <output name="content" as="content"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="set_default" opName="evaluate_expr">
@@ -21,11 +21,11 @@
         <input name="expr" fromInput="default_content"/>
       </inputs>
       <outputs>
-        <output name="result" as="$r_content"/>
-        <output name="error" as="$r_err"/>
+        <output name="result" as="content"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
-    <conditionNode id="is_enoent" varName="$r_err" condition="truthy" thenPath="use_default" elsePath="normal"/>
+    <conditionNode id="is_enoent" fromNode="try_read.error" condition="truthy" thenPath="use_default" elsePath="normal"/>
   </nodes>
   <paths>
     <path id="use_default" description="文件不存在 → 用默认内容" response="文件 {path} 不存在,已使用默认内容">
@@ -33,7 +33,7 @@
         <step node="set_default"/>
       </steps>
     </path>
-    <path id="normal" description="读取成功 → content 已在 $r_content" response="已读取 {path} 的内容"/>
+    <path id="normal" description="读取成功 → content 已就绪" response="已读取 {path} 的内容"/>
   </paths>
   <outputBindings>
     <binding name="content" fromNode="try_read.content" type="string" persist=""/>

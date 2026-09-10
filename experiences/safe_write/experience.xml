@@ -12,8 +12,8 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="content" as="$r_existing"/>
-        <output name="error" as="$r_err"/>
+        <output name="content" as="existing"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="do_write" opName="file_write">
@@ -22,8 +22,8 @@
         <input name="content" fromInput="content"/>
       </inputs>
       <outputs>
-        <output name="bytes_written" as="$r_bytes"/>
-        <output name="error" as="$r_err"/>
+        <output name="bytes_written" as="bytes"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="set_zero" opName="evaluate_expr">
@@ -31,11 +31,11 @@
         <input name="expr" literal="0"/>
       </inputs>
       <outputs>
-        <output name="result" as="$r_bytes"/>
-        <output name="error" as="$r_err"/>
+        <output name="result" as="bytes"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
-    <conditionNode id="already_exists" varName="$r_err" condition="falsy" thenPath="do_write" elsePath="abort"/>
+    <conditionNode id="already_exists" fromNode="probe_existing.error" condition="falsy" thenPath="do_write" elsePath="abort"/>
   </nodes>
   <paths>
     <path id="do_write" description="文件不存在 → 写入" response="已写入 {path}({bytes} 字节)">

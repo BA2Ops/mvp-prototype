@@ -11,22 +11,22 @@
         <input name="path" fromInput="path"/>
       </inputs>
       <outputs>
-        <output name="content" as="$r_probe"/>
-        <output name="error" as="$r_err"/>
+        <output name="content" as="probe"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
     <opNode id="calc_exists" opName="evaluate_expr">
       <inputs>
-        <input name="expr" literal="[object Object]"/>
+        <input name="expr" literal='{"type":"op","name":"is_null","args":[{"type":"var","name":"error"}]}'/>
       </inputs>
       <outputs>
-        <output name="result" as="$r_exists"/>
-        <output name="error" as="$r_err"/>
+        <output name="result" as="exists"/>
+        <output name="error" as="error"/>
       </outputs>
     </opNode>
   </nodes>
   <paths>
-    <path id="normal" description="exists = is_null($r_err)" response="文件 {path} 存在检查完成:{exists}">
+    <path id="normal" description="exists = is_null(error)" response="文件 {path} 存在检查完成:{exists}">
       <steps>
         <step node="calc_exists"/>
       </steps>
