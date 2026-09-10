@@ -83,40 +83,6 @@ export default function IoParamsPanel({ xmlExp }: Props) {
         )}
       </div>
 
-      {/* 输出绑定 */}
-      {xmlExp.outputBindings.length > 0 && (
-        <div className="bg-white p-4 rounded-lg border border-gray-200 md:col-span-2">
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <span className="px-2 py-0.5 text-xs bg-purple-100 text-purple-700 rounded">BIND</span>
-            输出绑定(outputs_bindings)
-            <span className="text-sm text-gray-400">({xmlExp.outputBindings.length})</span>
-          </h3>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200 text-gray-500">
-                <th className="text-left py-1 pr-2">输出名</th>
-                <th className="text-left py-1 pr-2">来源节点输出</th>
-                <th className="text-left py-1 pr-2">类型</th>
-                <th className="text-left py-1">持久化</th>
-              </tr>
-            </thead>
-            <tbody>
-              {xmlExp.outputBindings.map((b, i) => (
-                <tr key={i} className="border-b border-gray-100">
-                  <td className="py-1 pr-2 font-mono text-purple-700">{b.name}</td>
-                  <td className="py-1 pr-2 font-mono text-gray-700">{b.fromNode}</td>
-                  <td className="py-1 pr-2 text-gray-600">{b.type}</td>
-                  <td className="py-1">
-                    {b.persist
-                      ? <span className="text-green-600">✓ 是</span>
-                      : <span className="text-gray-400">否</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   )
 }
