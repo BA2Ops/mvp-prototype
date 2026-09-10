@@ -160,7 +160,24 @@ export async function registerExperienceRoutes(
       const service = new ExperienceService(CORE_EXPERIENCES, registry)
       const state = createInitialState(registry, service)
 
-      const intent = { type: l3.id, params: {} }
+      // 根据经验输入 schema 生成默认参数(与 compile-validator buildTestIntent 一致)
+      const params: Record<string, unknown> = {}
+      for (const [name, spec] of Object.entries(l3.inputs)) {
+        if (spec.default !== undefined) {
+          params[name] = spec.default
+        } else if (spec.required) {
+          switch (spec.type) {
+            case 'string': params[name] = 'test-value'; break
+            case 'number': params[name] = 0; break
+            case 'boolean': params[name] = false; break
+            case 'path': params[name] = '/tmp/test-path'; break
+            case 'object': params[name] = []; break
+            default: params[name] = null
+          }
+        }
+      }
+
+      const intent = { type: l3.id, params }
       const allocator = state.frameScopeAllocator
       if (allocator) allocator.enterScope()
       try {

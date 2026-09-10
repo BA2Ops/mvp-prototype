@@ -8,14 +8,14 @@ import MetadataEditor from '../components/MetadataEditor'
 import IoParamsPanel from '../components/IoParamsPanel'
 import type { XmlExperience } from '../../../shared/xml-schema'
 
-type Tab = 'dag' | 'xml' | 'l3' | 'stack'
+type Tab = 'metadata' | 'dag' | 'xml' | 'l3' | 'stack'
 
 export default function ExperienceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [detail, setDetail] = useState<ExperienceDetail | null>(null)
   const [l3, setL3] = useState<unknown>(null)
   const [stack, setStack] = useState<unknown[]>([])
-  const [tab, setTab] = useState<Tab>('dag')
+  const [tab, setTab] = useState<Tab>('metadata')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -81,17 +81,12 @@ export default function ExperienceDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-6">
-        {/* 元数据编辑 */}
-        <MetadataEditor detail={detail} onUpdate={load} />
-
-        {/* 输入/输出参数 */}
-        {xmlExp && <IoParamsPanel xmlExp={xmlExp} />}
-
+      <main className="max-w-6xl mx-auto px-6 py-8">
         {/* Tab 切换 */}
-        <div className="border-b border-gray-200">
+        <div className="border-b border-gray-200 mb-6">
           <nav className="flex gap-4">
             {([
+              ['metadata', '元数据'],
               ['dag', 'DAG 可视化'],
               ['xml', 'XML 源码'],
               ['l3', 'L3 编译结果'],
@@ -113,6 +108,12 @@ export default function ExperienceDetailPage() {
         </div>
 
         {/* Tab 内容 */}
+        {tab === 'metadata' && (
+          <div className="space-y-6">
+            <MetadataEditor detail={detail} onUpdate={load} />
+            {xmlExp && <IoParamsPanel xmlExp={xmlExp} />}
+          </div>
+        )}
         {tab === 'dag' && xmlExp && <DagView xmlExp={xmlExp} />}
         {tab === 'xml' && <XmlViewer xml={detail.xml} />}
         {tab === 'l3' && (
