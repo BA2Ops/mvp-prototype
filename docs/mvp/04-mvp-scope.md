@@ -158,8 +158,7 @@ const rules: CompilationRule[] = [
     expand: (intent, ctx) => [
       { kind: 'list_files', args: { pattern: extractLogPattern(intent), recursive: true }, 
         required_params: ['pattern', 'location'] },
-      { kind: 'sort_results', args: { by: 'mtime', desc: true }, required_params: [] },
-      { kind: 'take_first', args: {}, required_params: [] },
+      { kind: 'evaluate_collection', args: { expr: 'sort+take' }, required_params: [] },
       { kind: 'read_file', args: { path: '<derived>' }, required_params: ['path'] }
     ]
   },

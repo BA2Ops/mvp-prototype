@@ -25,8 +25,6 @@ import { evaluateExprOp } from '../src/l2/builtins/evaluate-expr.js'
 import { evaluateCollectionOp } from '../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../src/l2/builtins/decrement-counter.js'
-import { sortByOp } from '../src/l2/builtins/sort-by.js'
-import { takeFirstOp } from '../src/l2/builtins/take-first.js'
 
 const registry = new L2Registry()
 registry.register(fileReadOp)
@@ -39,8 +37,6 @@ registry.register(evaluateExprOp)
 registry.register(evaluateCollectionOp)
 registry.register(incrementCounterOp)
 registry.register(decrementCounterOp)
-registry.register(sortByOp)
-registry.register(takeFirstOp)
 
 interface Row {
   name: string

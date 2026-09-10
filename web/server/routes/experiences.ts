@@ -146,15 +146,12 @@ export async function registerExperienceRoutes(
       const { evaluateCollectionOp } = await import('../../../src/l2/builtins/evaluate-collection.js')
       const { incrementCounterOp } = await import('../../../src/l2/builtins/increment-counter.js')
       const { decrementCounterOp } = await import('../../../src/l2/builtins/decrement-counter.js')
-      const { sortByOp } = await import('../../../src/l2/builtins/sort-by.js')
-      const { takeFirstOp } = await import('../../../src/l2/builtins/take-first.js')
 
       const registry = new L2Registry()
       registry.register(fileReadOp); registry.register(fileWriteOp); registry.register(shellExecOp)
       registry.register(globMatchOp); registry.register(grepSearchOp); registry.register(stringReplaceOp)
       registry.register(evaluateExprOp); registry.register(evaluateCollectionOp)
       registry.register(incrementCounterOp); registry.register(decrementCounterOp)
-      registry.register(sortByOp); registry.register(takeFirstOp)
 
       const l3 = compileXmlToL3(xmlExp)
       const experiences = new Map(CORE_EXPERIENCES.map(e => [e.id, e]))

@@ -1,0 +1,16 @@
+refactor(l2): 迁移 sort_by/take_first 到 evaluate_collection,删除独立 op 文件
+
+变更:
+- 删除 src/l2/builtins/sort-by.ts 和 take-first.ts
+- 从所有注册点移除 sort_by/take_first(server/scripts/tests)
+- tier-b05 测试:sort_by/take_first 测试用例改为 evaluate_collection(sort/take)
+- tier-bC2 formalSpec 测试:从 11 ops 减为 10 ops
+- tier-a00c l2-registry 测试:8 op 列表更新
+- demo-02:take_first 改为 evaluate_collection pipe
+- 文档 06/09/11/19/03/04 + l1-design README + tests/phase-b README 同步更新
+
+L2 op 总数:12 → 10(移除 sort_by + take_first,新增 evaluate_collection 已在上一次提交)
+
+Generated with [Devin](https://devin.ai)
+
+Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>

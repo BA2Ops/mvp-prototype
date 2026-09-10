@@ -11,6 +11,8 @@
  *  ④ ERROR_SLOT_INDEX=99 sentinel 唯一性
  *  ⑤ formalSpec[k].type 字段不丢失 (从 11 ops 全检)
  *  ⑥ L2Registry.getSpec() 返回值完整
+ *
+ * 注:sort_by/take_first 已迁移到 evaluate_collection 运算符域
  */
 
 import { describe, it, expect } from 'vitest'
@@ -25,8 +27,6 @@ import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
 import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../../src/l2/builtins/decrement-counter.js'
-import { sortByOp } from '../../src/l2/builtins/sort-by.js'
-import { takeFirstOp } from '../../src/l2/builtins/take-first.js'
 import {
   parseSlotIndexFromRegister,
   ERROR_SLOT_INDEX,
@@ -38,17 +38,16 @@ function mkRegistry(): L2Registry {
   r.register(fileReadOp); r.register(fileWriteOp); r.register(globMatchOp)
   r.register(grepSearchOp); r.register(shellExecOp); r.register(stringReplaceOp)
   r.register(evaluateExprOp); r.register(evaluateCollectionOp); r.register(incrementCounterOp); r.register(decrementCounterOp)
-  r.register(sortByOp); r.register(takeFirstOp)
   return r
 }
 
 describe('BC2: FormalParam slotIndex schema migration (T-1.2)', () => {
-  describe('① 全部 11 ops 都有 slotIndex 字段', () => {
+  describe('① 全部 10 ops 都有 slotIndex 字段', () => {
     it('formalSpec.inputs[k].slotIndex 与 outputs[k].slotIndex 必填', () => {
       const reg = mkRegistry()
       const ops = ['file_read', 'file_write', 'glob_match', 'grep_search', 'shell_exec',
-                   'string_replace', 'evaluate_expr', 'increment_counter', 'decrement_counter',
-                   'sort_by', 'take_first']
+                   'string_replace', 'evaluate_expr', 'evaluate_collection',
+                   'increment_counter', 'decrement_counter']
       for (const name of ops) {
         const spec = reg.getSpec(name)
         expect(spec).toBeDefined()
@@ -127,8 +126,8 @@ describe('BC2: FormalParam slotIndex schema migration (T-1.2)', () => {
     it('99 是 sentinel,且不与任何 op 的正常 slotIndex 冲突', () => {
       const reg = mkRegistry()
       const ops = ['file_read', 'file_write', 'glob_match', 'grep_search', 'shell_exec',
-                   'string_replace', 'evaluate_expr', 'increment_counter', 'decrement_counter',
-                   'sort_by', 'take_first']
+                   'string_replace', 'evaluate_expr', 'evaluate_collection',
+                   'increment_counter', 'decrement_counter']
       for (const name of ops) {
         const spec = reg.getSpec(name)!
         for (const fp of Object.values(spec.inputs)) {
@@ -148,8 +147,8 @@ describe('BC2: FormalParam slotIndex schema migration (T-1.2)', () => {
     it('所有 formalSpec 条目都保留 type 字段', () => {
       const reg = mkRegistry()
       const ops = ['file_read', 'file_write', 'glob_match', 'grep_search', 'shell_exec',
-                   'string_replace', 'evaluate_expr', 'increment_counter', 'decrement_counter',
-                   'sort_by', 'take_first']
+                   'string_replace', 'evaluate_expr', 'evaluate_collection',
+                   'increment_counter', 'decrement_counter']
       for (const name of ops) {
         const spec = reg.getSpec(name)!
         for (const fp of Object.values({ ...spec.inputs, ...spec.outputs })) {

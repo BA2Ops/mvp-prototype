@@ -20,8 +20,6 @@ import { evaluateExprOp } from '../../../src/l2/builtins/evaluate-expr.js'
 import { evaluateCollectionOp } from '../../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../../../src/l2/builtins/decrement-counter.js'
-import { sortByOp } from '../../../src/l2/builtins/sort-by.js'
-import { takeFirstOp } from '../../../src/l2/builtins/take-first.js'
 import type { FormalParam } from '../../../src/l2/operation.js'
 
 // ============== 构建全局 L2 Registry ==============
@@ -38,8 +36,6 @@ function createL2Registry(): L2Registry {
   registry.register(evaluateCollectionOp)
   registry.register(incrementCounterOp)
   registry.register(decrementCounterOp)
-  registry.register(sortByOp)
-  registry.register(takeFirstOp)
   return registry
 }
 

@@ -36,8 +36,9 @@
 
 | 文件 | 测试数 | 意图 |
 |------|--------|------|
-| [b05-data-processing](./tier-b05-data-processing.test.ts) | 28 | string_replace(字面量/正则/全局替换/replace_all)、sort_by(升序/降序)、take_first、increment_counter(+1、非数字错误) |
+| [b05-data-processing](./tier-b05-data-processing.test.ts) | 25 | string_replace(字面量/正则/全局替换/replace_all)、evaluate_collection(sort/take 集合运算)、increment_counter(+1、非数字错误) |
 | [b07-evaluate-expr](./tier-b07-evaluate-expr.test.ts) | 51 | evaluate_expr:AST 求值(literal/var/op)、算术(+/-/*/÷/%)、比较(==/!=/>/</>=/<=)、逻辑短路(and/or/not)、位运算、字符串(concat/length/contains)、列表、对象、错误处理(error_code/extract_error_code)、空检查(is_null/is_truthy)、typeof、集成 l1MainLoop |
+| [b08-evaluate-collection](./tier-b08-evaluate-collection.test.ts) | 35 | evaluate_collection:集合运算(sort/filter/map/take/slice/unique/group_by/count_by/concat/length/contains/head/flatten)、pipe 管道语义、错误处理、集成 l1MainLoop |
 
 ### BC2-BC4 — CRR 元数据迁移
 

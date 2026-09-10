@@ -31,15 +31,13 @@ import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
 import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../../src/l2/builtins/decrement-counter.js'
-import { sortByOp } from '../../src/l2/builtins/sort-by.js'
-import { takeFirstOp } from '../../src/l2/builtins/take-first.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 
 function mkRegistry(): L2Registry {
   const r = new L2Registry()
   r.register(fileReadOp); r.register(fileWriteOp); r.register(shellExecOp)
   r.register(globMatchOp); r.register(grepSearchOp); r.register(stringReplaceOp)
   r.register(evaluateExprOp); r.register(evaluateCollectionOp); r.register(incrementCounterOp); r.register(decrementCounterOp)
-  r.register(sortByOp); r.register(takeFirstOp)
   return r
 }
 

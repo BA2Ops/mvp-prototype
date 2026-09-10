@@ -21,8 +21,11 @@ import { shellExecOp } from '../src/l2/builtins/shell-exec.js'
 import { globMatchOp } from '../src/l2/builtins/glob-match.js'
 import { grepSearchOp } from '../src/l2/builtins/grep-search.js'
 import { stringReplaceOp } from '../src/l2/builtins/string-replace.js'
-import { takeFirstOp } from '../src/l2/builtins/take-first.js'
+import { evaluateCollectionOp } from '../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../src/l2/builtins/increment-counter.js'
+import { createInitialState } from '../src/l1/execution-state.js'
+import { L2Registry } from '../src/l2/registry.js'
+import { createProgrammableL3 } from '../src/mocks/mock-l3.js'
 
 const ctx = await setupDemo('Demo 02 — L2 真实操作层')
 
@@ -98,16 +101,42 @@ step('5', 'string_replace — 全部替换 alpha→ALPHA')
   verify(ctx, '替换 2 处且结果正确', () => r.count === 2 && r.result === 'ALPHA and ALPHA again')
 }
 
-// ============== 步骤 6: take_first / increment_counter ==============
+// ============== 步骤 6: evaluate_collection / increment_counter ==============
 
-step('6', 'take_first + increment_counter（数据处理类 op）')
+step('6', 'evaluate_collection (take) + increment_counter（数据处理类 op）')
 {
-  const t = await run(takeFirstOp, { items: [10, 20, 30, 40], n: 2 })
-  observe('taken', t.taken)
+  // evaluate_collection 需要 state,通过 L1 集成执行
+  const expr = { type: 'op', name: 'take', args: [
+    { type: 'literal', value: [10, 20, 30, 40] },
+    { type: 'literal', value: 2 }
+  ] }
+  const l3 = createProgrammableL3()
+  l3.setChildren('plan', [
+    { id: 'mv_expr', parentIntentId: null, createdAt: 0, kind: 'move',
+      from: { kind: 'literal', value: expr },
+      to: { kind: 'internal', name: '$r0' } },
+    { id: 'ev', parentIntentId: null, createdAt: 0, kind: 'execute_op',
+      operation: 'evaluate_collection',
+      inputs: { expr: { kind: 'internal', name: '$r0' } },
+      outputs: {
+        result: { kind: 'internal', name: '$r_result' },
+        count: { kind: 'internal', name: '$r_count' },
+        error: { kind: 'internal', name: '$r_err' }
+      },
+      status: 'pending' }
+  ])
+  const reg = new L2Registry(); reg.register(evaluateCollectionOp)
+  const state = createInitialState(reg, l3)
+  const { l1MainLoop } = await import('../src/l1/main-loop.js')
+  await l1MainLoop({ type: 'plan', params: {} }, state)
+  const taken = state.internalStore.get('$r_result') as number[]
+  observe('taken', taken)
+  observe('count', state.internalStore.get('$r_count'))
+
   const c = await run(incrementCounterOp, { value: 41 })
   observe('new_value', c.new_value)
-  verify(ctx, 'take_first 取前 2 个元素', () =>
-    (t.taken as number[]).join(',') === '10,20' && t.count === 2)
+  verify(ctx, 'evaluate_collection take 取前 2 个元素', () =>
+    taken.join(',') === '10,20' && state.internalStore.get('$r_count') === 2)
   verify(ctx, 'increment_counter 41+1=42', () => c.new_value === 42)
 }
 

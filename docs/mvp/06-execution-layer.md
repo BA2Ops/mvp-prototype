@@ -112,7 +112,7 @@ RISC（精简指令集）架构的核心原则：
 ├───────────────────────────────────────────────────────────┤
 │ L2 微代码层 / 业务 operations │
 │ file_read, file_write, glob_match, grep_search, │
-│ string_replace, sort_by, take_first, shell_exec, ... │
+│ string_replace, evaluate_expr, evaluate_collection, shell_exec, ... │
 │ 实现方式: 原子函数 OR L1 primitive 序列 │
 ├───────────────────────────────────────────────────────────┤
 │ L1 硬件层 / 2-Primitive RISC │
@@ -203,7 +203,7 @@ const edit_file_op: Operation = {
 **MVP 推荐**：
 
 - 性能敏感且原生支持的 → A（file_read、file_write、glob_match、grep_search、shell_exec）
-- 业务逻辑清晰的 → B（string_replace、sort_by、take_first）
+- 业务逻辑清晰的 → B（string_replace、evaluate_expr、evaluate_collection）
 
 ### 2.4 L3 意图编译层的选词策略
 
@@ -219,7 +219,7 @@ L3 编译 L2 → L1 序列时，**优先使用 L2 operations** 而非直接展�
 // ✅ 推荐：用 L2 microcode
 [
   { kind: 'execute_op', operation: 'glob_match', inputs: {...}, outputs: {...} },
-  { kind: 'execute_op', operation: 'sort_by', inputs: {...}, outputs: {...} },
+  { kind: 'execute_op', operation: 'evaluate_collection', inputs: {...}, outputs: {...} },
   { kind: 'execute_op', operation: 'file_read', inputs: {...}, outputs: {...} }
 ]
 
@@ -798,7 +798,7 @@ formalSpec.outputs.error.register = '$r_err'
 // 核心内置 operations（执行层默认提供）
 const BUILTIN_OPERATIONS: Operation[] = [
   file_read_op, file_write_op, glob_match_op, grep_search_op,
-  shell_exec_op, string_replace_op, sort_by_op, take_first_op
+  shell_exec_op, string_replace_op, evaluate_expr_op, evaluate_collection_op
 ]
 
 // 扩展机制（pi 扩展点）
@@ -918,8 +918,7 @@ interface ExecutionState {
 | `grep_search` | **A 原子** | OS 文件系统 | 需要扫描内容，性能敏感 |
 | `shell_exec` | **A 原子** | shell | 必须交给 shell 执行 |
 | `string_replace` | **B 微代码** | 无 | 可分解为 `find + replace` 或调用 `file_read + file_write` |
-| `sort_by` | **B 微代码** | 无 | 可用 list ops 表达，但性能差 |
-| `take_first` | **B 微代码** | 无 | 可用 list ops 表达，但性能差 |
+| `evaluate_collection` | **B 微代码** | 无 | 集合运算(sort/take/filter/map 等),原 sort_by/take_first 已迁移 |
 
 **判断标准**：
 
@@ -940,8 +939,7 @@ interface ExecutionState {
 | `grep_search` | pattern, path, context?, regex? | matches | 内容搜索 |
 | `shell_exec` | command, cwd?, timeout? | stdout, stderr, exit_code | shell 执行 |
 | `string_replace` | text, find, replace, regex? | result | 字符串替换 |
-| `sort_by` | items, by, desc? | sorted | 列表排序 |
-| `take_first` | items, n? | taken | 取前 n 个 |
+| `evaluate_collection` | expr, env? | result, count | 集合表达式求值(sort/take/filter/map 等) |
 | `increment_counter` | value | new_value | 计数器 + 1 |
 | `decrement_counter` | value | new_value | 计数器 - 1 |
 
@@ -1208,32 +1206,20 @@ const trigger: Expr = {
   }
 }
 
-// 7. sort_by
+// 7. evaluate_collection（原 sort_by/take_first 已迁移为集合运算符）
 {
-  name: 'sort_by',
+  name: 'evaluate_collection',
   inputs: {
-    items: { type: 'list<string>', required: true },
-    by: { type: 'string', required: true }, // 'name' | 'mtime' | 'size'
-    desc: { type: 'boolean', required: false, default: false }
+    expr: { type: 'object', required: true }, // JSON 集合表达式树
+    env: { type: 'object', required: false }  // 变量名 → 寄存器映射
   },
   outputs: {
-    sorted: { type: 'list<string>', required: true }
+    result: { type: 'any', required: true },  // 列表或聚合值
+    count: { type: 'number', required: true } // 结果计数
   }
 }
 
-// 8. take_first
-{
-  name: 'take_first',
-  inputs: {
-    items: { type: 'list<string>', required: true },
-    n: { type: 'number', required: false, default: 1 }
-  },
-  outputs: {
-    taken: { type: 'list<string>', required: true }
-  }
-}
-
-// 9. evaluate_expr（2026-08-20 重构新增）
+// 8. evaluate_expr（2026-08-20 重构新增）
 {
   name: 'evaluate_expr',
   inputs: {
@@ -1259,7 +1245,7 @@ v1 内置集的选择原则：
 被故意排除的操作：
 
 - `git_commit`、`docker_run`、`npm_test` → 业务操作，应通过 `shell_exec` 或扩展实现
-- `read_log_file` → 业务操作，应通过 `glob_match('*.log') + sort_by + file_read` 组合
+- `read_log_file` → 业务操作，应通过 `glob_match('*.log') + evaluate_collection(sort+take) + file_read` 组合
 - `run_tests` → 业务操作，需要项目上下文
 
 ---
@@ -1292,26 +1278,28 @@ v1 内置集的选择原则：
                path: { kind: 'literal', value: '.' } },
     outputs: { matches: { kind: 'variable', name: '$log_files' } } },
 
-  // 2. 按 mtime 排序
+  // 2. 按 mtime 排序 + 取最新一个(evaluate_collection 管道)
   { kind: 'execute_op',
-    operation: 'sort_by',
-    inputs:  { items: { kind: 'variable', name: '$log_files' },
-               by: { kind: 'literal', value: 'mtime' },
-               desc: { kind: 'literal', value: true } },
-    outputs: { sorted: { kind: 'variable', name: '$sorted_logs' } } },
+    operation: 'evaluate_collection',
+    inputs:  { expr: { kind: 'literal', value: {
+      type: 'pipe',
+      source: { type: 'var', name: '$log_files' },
+      stages: [
+        { op: 'sort', args: [
+          { type: 'literal', value: 'mtime' },
+          { type: 'literal', value: true }
+        ]},
+        { op: 'take', args: [{ type: 'literal', value: 1 }] }
+      ]
+    }}},
+    outputs: { result: { kind: 'variable', name: '$latest_log' } } },
 
-  // 3. 取最新一个
-  { kind: 'execute_op',
-    operation: 'take_first',
-    inputs:  { items: { kind: 'variable', name: '$sorted_logs' } },
-    outputs: { taken: { kind: 'variable', name: '$latest_log' } } },
-
-  // 4. 提取 path
+  // 3. 提取 path
   { kind: 'move',
     from: { kind: 'field', parent: { kind: 'variable', name: '$latest_log' }, path: '[0]' },
     to:   { kind: 'variable', name: '$log_path' } },
 
-  // 5. 读文件
+  // 4. 读文件
   { kind: 'execute_op',
     operation: 'file_read',
     inputs:  { path: { kind: 'variable', name: '$log_path' } },
@@ -1423,7 +1411,7 @@ v1 内置集的选择原则：
 | 意图 | 步骤数 | 涉及 operations |
 |---|---|---|
 | 读单文件 | 1 | file_read |
-| 读最新日志 | 5 | glob_match, sort_by, take_first, file_read |
+| 读最新日志 | 4 | glob_match, evaluate_collection, file_read |
 | 全局搜索 | 2 | glob_match, grep_search |
 | 文件编辑 | 3 | file_read, string_replace, file_write |
 | 跑命令 | 1 | shell_exec |
@@ -1701,7 +1689,7 @@ L1 Address 解析器（`AddressError`）与 L2 Op 错误（`OperationError`）�
 
 - `env` —— 环境变量
 - `http` —— HTTP 资源
-- `derived` —— 派生数据（已在 sort_by/take_first 中使用，**不是独立 Address**）
+- `derived` —— 派生数据（已在 evaluate_collection 中使用，**不是独立 Address**）
 - `concat` —— 字符串拼接 Address（语法糖 vs 独立 operation？）
 
 ### 11.6 operation schema 的形式化
@@ -1750,7 +1738,7 @@ L1 Address 解析器（`AddressError`）与 L2 Op 错误（`OperationError`）�
 ### MVP 范围
 
 - **L1**：5 primitive（`move` / `execute_op` / `execute_intent` / `skip_n` / `conditional_skip`）
-- **L2**：8 内置 operations（file_read、file_write、glob_match、grep_search、shell_exec、string_replace、sort_by、take_first）
+- **L2**：8 内置 operations（file_read、file_write、glob_match、grep_search、shell_exec、string_replace、evaluate_expr、evaluate_collection）
 - **Address**：5 类型（literal、variable、file、stream、field）
 - **注册机制**：核心内置 + 扩展注册
 

@@ -4,10 +4,9 @@
  * @see ../../docs/mvp/06-execution-layer.md §7.2
  * @see ../../docs/mvp/11-prototype-implementation-plan.md Phase B5
  *
- * 覆盖 5 个 op：
+ * 覆盖 4 个 op：
  * - string_replace: 字面量/正则、replace_all、INVALID_REGEX
- * - sort_by: 数字/字符串、升降序、不修改原数组
- * - take_first: 默认 n=1、边界、INVALID_INPUT
+ * - evaluate_collection: sort/take 等集合运算(原 sort_by/take_first 已迁移)
  * - increment_counter / decrement_counter: +1/-1、INVALID_INPUT、循环集成
  */
 
@@ -17,8 +16,8 @@ import { createInitialState } from '../../src/l1/execution-state.js'
 import { L2Registry } from '../../src/l2/registry.js'
 import { isOperationError } from '../../src/l2/errors.js'
 import { stringReplaceOp } from '../../src/l2/builtins/string-replace.js'
-import { sortByOp } from '../../src/l2/builtins/sort-by.js'
-import { takeFirstOp } from '../../src/l2/builtins/take-first.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
+import type { CollectionExpr } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../../src/l2/builtins/decrement-counter.js'
 import { createProgrammableL3 } from '../../src/mocks/mock-l3.js'
@@ -135,185 +134,128 @@ describe('B05: 数据处理 ops', () => {
     })
   })
 
-  // ============== sort_by ==============
-  describe('sort_by', () => {
+  // ============== evaluate_collection (原 sort_by/take_first 已迁移) ==============
+  describe('evaluate_collection', () => {
+    // 辅助:构造集合表达式
+    const lit = (value: unknown): CollectionExpr => ({ type: 'literal', value: value as never })
+    const op = (name: string, ...args: CollectionExpr[]): CollectionExpr =>
+      ({ type: 'op', name: name as never, args })
+
+    // 创建带 state 的执行环境(evaluate_collection 需要 state)
+    async function evalCollection(expr: CollectionExpr) {
+      const reg = new L2Registry()
+      reg.register(evaluateCollectionOp)
+      const l3 = createProgrammableL3()
+      const state = createInitialState(reg, l3)
+      return evaluateCollectionOp.execute({ expr }, state)
+    }
+
     test('formalSpec', () => {
-      expect(sortByOp.name).toBe('sort_by')
-      expect(sortByOp.formalSpec.inputs.items.required).toBe(true)
-      expect(sortByOp.formalSpec.inputs.by.required).toBe(true)
+      expect(evaluateCollectionOp.name).toBe('evaluate_collection')
+      expect(evaluateCollectionOp.formalSpec.inputs.expr.required).toBe(true)
+      expect(evaluateCollectionOp.formalSpec.outputs.result.required).toBe(true)
+      expect(evaluateCollectionOp.formalSpec.outputs.count.type).toBe('number')
     })
 
-    test('按数字字段升序排序', async () => {
-      const items = [
-        { name: 'b', age: 30 },
-        { name: 'a', age: 20 },
-        { name: 'c', age: 25 }
-      ]
-      const result = await sortByOp.execute({ items, by: 'age' })
-      const sorted = result.sorted as Array<{ name: string; age: number }>
+    test('sort: 按数字字段升序排序', async () => {
+      const r = await evalCollection(
+        op('sort', lit([{ name: 'b', age: 30 }, { name: 'a', age: 20 }, { name: 'c', age: 25 }]), lit('age'))
+      )
+      const sorted = r.result as Array<{ name: string; age: number }>
       expect(sorted.map(s => s.name)).toEqual(['a', 'c', 'b'])
-      expect(result.count).toBe(3)
+      expect(r.count).toBe(3)
     })
 
-    test('按数字字段降序（desc=true）', async () => {
-      const items = [{ x: 1 }, { x: 3 }, { x: 2 }]
-      const result = await sortByOp.execute({ items, by: 'x', desc: true })
-      const sorted = result.sorted as Array<{ x: number }>
+    test('sort: 按数字字段降序（desc=true）', async () => {
+      const r = await evalCollection(
+        op('sort', lit([{ x: 1 }, { x: 3 }, { x: 2 }]), lit('x'), lit(true))
+      )
+      const sorted = r.result as Array<{ x: number }>
       expect(sorted.map(s => s.x)).toEqual([3, 2, 1])
     })
 
-    test('按字符串字段排序', async () => {
-      const items = [{ k: 'banana' }, { k: 'apple' }, { k: 'cherry' }]
-      const result = await sortByOp.execute({ items, by: 'k' })
-      const sorted = result.sorted as Array<{ k: string }>
+    test('sort: 按字符串字段排序', async () => {
+      const r = await evalCollection(
+        op('sort', lit([{ k: 'banana' }, { k: 'apple' }, { k: 'cherry' }]), lit('k'))
+      )
+      const sorted = r.result as Array<{ k: string }>
       expect(sorted.map(s => s.k)).toEqual(['apple', 'banana', 'cherry'])
     })
 
-    test('不修改原数组', async () => {
+    test('sort: 不修改原数组', async () => {
       const original = [{ x: 3 }, { x: 1 }, { x: 2 }]
-      const items = [...original]
-      await sortByOp.execute({ items, by: 'x' })
-      expect(items).toEqual(original)
+      const r = await evalCollection(op('sort', lit(original), lit('x')))
+      expect(original).toEqual([{ x: 3 }, { x: 1 }, { x: 2 }])
+      expect((r.result as Array<{ x: number }>).map(s => s.x)).toEqual([1, 2, 3])
     })
 
-    test('INVALID_INPUT：非数组', async () => {
-      const result = await sortByOp.execute({
-        items: 'not an array' as unknown as never[],
-        by: 'x'
-      })
-      expect(isOperationError(result.error)).toBe(true)
-      expect((result.error as { code: string }).code).toBe('INVALID_INPUT')
-      expect(result.count).toBe(0)
+    test('sort: INVALID_INPUT（非数组）', async () => {
+      const r = await evalCollection(op('sort', lit('not an array'), lit('x')))
+      expect(isOperationError(r.error)).toBe(true)
+      expect((r.error as { code: string }).code).toBe('INVALID_INPUT')
     })
 
-    test('空数组', async () => {
-      const result = await sortByOp.execute({ items: [], by: 'x' })
-      expect(result.count).toBe(0)
-      expect(result.sorted).toEqual([])
+    test('sort: 空数组', async () => {
+      const r = await evalCollection(op('sort', lit([]), lit('x')))
+      expect(r.count).toBe(0)
+      expect(r.result).toEqual([])
     })
 
-    test('集成：sort + take_first（top 3）', async () => {
-      const l3 = createProgrammableL3()
-      // 顺序：先 mv_items + mv_by + mv_n（输入准备），再 sort + take（处理）
-      l3.setChildren('plan', [
-        { id: 'mv_items', parentIntentId: null, createdAt: 0, kind: 'move',
-          from: { kind: 'literal', value: [{ s: 30 }, { s: 10 }, { s: 20 }, { s: 40 }, { s: 5 }] },
-          to: { kind: 'internal', name: '$r_items' } },
-        { id: 'mv_by', parentIntentId: null, createdAt: 0, kind: 'move',
-          from: { kind: 'literal', value: 's' },
-          to: { kind: 'internal', name: '$r_by' } },
-        { id: 'mv_n', parentIntentId: null, createdAt: 0, kind: 'move',
-          from: { kind: 'literal', value: 3 },
-          to: { kind: 'internal', name: '$r_n' } },
-        { id: 'sort', parentIntentId: null, createdAt: 0, kind: 'execute_op',
-          operation: 'sort_by',
-          inputs: {
-            items: { kind: 'internal', name: '$r_items' },
-            by: { kind: 'internal', name: '$r_by' }
-          },
-          outputs: {
-            sorted: { kind: 'internal', name: '$r_sorted' },
-            count: { kind: 'internal', name: '$r_sort_count' },
-            error: { kind: 'internal', name: '$r_err' }
-          },
-          status: 'pending' },
-        { id: 'take', parentIntentId: null, createdAt: 0, kind: 'execute_op',
-          operation: 'take_first',
-          inputs: {
-            items: { kind: 'internal', name: '$r_sorted' },
-            n: { kind: 'internal', name: '$r_n' }
-          },
-          outputs: {
-            taken: { kind: 'internal', name: '$r_taken' },
-            count: { kind: 'internal', name: '$r_take_count' },
-            error: { kind: 'internal', name: '$r_err' }
-          },
-          status: 'pending' }
-      ])
-      const reg = new L2Registry(); reg.register(sortByOp); reg.register(takeFirstOp)
-      const state = createInitialState(reg, l3)
-      await l1MainLoop({ type: 'plan', params: {} }, state)
-
-      const taken = state.internalStore.get('$r_taken') as Array<{ s: number }>
-      expect(taken.map(t => t.s)).toEqual([5, 10, 20])
-      expect(state.internalStore.get('$r_take_count')).toBe(3)
-    })
-  })
-
-  // ============== take_first ==============
-  describe('take_first', () => {
-    test('formalSpec', () => {
-      expect(takeFirstOp.name).toBe('take_first')
-      expect(takeFirstOp.formalSpec.inputs.n.required).toBe(false)
+    test('take: 默认行为（n=1 → 取第一个）', async () => {
+      const r = await evalCollection(op('take', lit([10, 20, 30]), lit(1)))
+      expect(r.result).toEqual([10])
+      expect(r.count).toBe(1)
     })
 
-    test('默认 n=1 → 取第一个', async () => {
-      const result = await takeFirstOp.execute({ items: [10, 20, 30] })
-      expect(result.taken).toEqual([10])
-      expect(result.count).toBe(1)
+    test('take: n=3 → 取前 3 个', async () => {
+      const r = await evalCollection(op('take', lit([1, 2, 3, 4, 5]), lit(3)))
+      expect(r.result).toEqual([1, 2, 3])
+      expect(r.count).toBe(3)
     })
 
-    test('n=3 → 取前 3 个', async () => {
-      const result = await takeFirstOp.execute({ items: [1, 2, 3, 4, 5], n: 3 })
-      expect(result.taken).toEqual([1, 2, 3])
-      expect(result.count).toBe(3)
+    test('take: n > length → 返回全部', async () => {
+      const r = await evalCollection(op('take', lit([1, 2]), lit(10)))
+      expect(r.result).toEqual([1, 2])
+      expect(r.count).toBe(2)
     })
 
-    test('n > length → 返回全部', async () => {
-      const result = await takeFirstOp.execute({ items: [1, 2], n: 10 })
-      expect(result.taken).toEqual([1, 2])
-      expect(result.count).toBe(2)
+    test('take: n <= 0 → 空数组', async () => {
+      const r = await evalCollection(op('take', lit([1, 2, 3]), lit(0)))
+      expect(r.result).toEqual([])
+      expect(r.count).toBe(0)
     })
 
-    test('n <= 0 → 空数组', async () => {
-      const result = await takeFirstOp.execute({ items: [1, 2, 3], n: 0 })
-      expect(result.taken).toEqual([])
-      expect(result.count).toBe(0)
-    })
-
-    test('不修改原数组', async () => {
-      const original = [1, 2, 3]
-      const items = [...original]
-      await takeFirstOp.execute({ items, n: 1 })
-      expect(items).toEqual(original)
-    })
-
-    test('INVALID_INPUT：非数组', async () => {
-      const result = await takeFirstOp.execute({
-        items: 42 as unknown as never[]
-      })
-      expect(isOperationError(result.error)).toBe(true)
-      expect((result.error as { code: string }).code).toBe('INVALID_INPUT')
-    })
-
-    test('集成', async () => {
+    test('集成：sort + take 管道（top 3）', async () => {
+      const expr: CollectionExpr = {
+        type: 'pipe',
+        source: lit([{ s: 30 }, { s: 10 }, { s: 20 }, { s: 40 }, { s: 5 }]),
+        stages: [
+          { op: 'sort', args: [lit('s')] },
+          { op: 'take', args: [lit(3)] }
+        ]
+      }
       const l3 = createProgrammableL3()
       l3.setChildren('plan', [
-        { id: 'mv_i', parentIntentId: null, createdAt: 0, kind: 'move',
-          from: { kind: 'literal', value: [1, 2, 3, 4] },
+        { id: 'mv_expr', parentIntentId: null, createdAt: 0, kind: 'move',
+          from: { kind: 'literal', value: expr },
           to: { kind: 'internal', name: '$r0' } },
-        { id: 'mv_n', parentIntentId: null, createdAt: 0, kind: 'move',
-          from: { kind: 'literal', value: 2 },
-          to: { kind: 'internal', name: '$r1' } },
-        { id: 'tf', parentIntentId: null, createdAt: 0, kind: 'execute_op',
-          operation: 'take_first',
-          inputs: {
-            items: { kind: 'internal', name: '$r0' },
-            n: { kind: 'internal', name: '$r1' }
-          },
+        { id: 'ev', parentIntentId: null, createdAt: 0, kind: 'execute_op',
+          operation: 'evaluate_collection',
+          inputs: { expr: { kind: 'internal', name: '$r0' } },
           outputs: {
-            taken: { kind: 'internal', name: '$r_taken' },
+            result: { kind: 'internal', name: '$r_result' },
             count: { kind: 'internal', name: '$r_count' },
             error: { kind: 'internal', name: '$r_err' }
           },
           status: 'pending' }
       ])
-      const reg = new L2Registry(); reg.register(takeFirstOp)
+      const reg = new L2Registry(); reg.register(evaluateCollectionOp)
       const state = createInitialState(reg, l3)
       await l1MainLoop({ type: 'plan', params: {} }, state)
 
-      expect(state.internalStore.get('$r_taken')).toEqual([1, 2])
-      expect(state.internalStore.get('$r_count')).toBe(2)
+      const result = state.internalStore.get('$r_result') as Array<{ s: number }>
+      expect(result.map(t => t.s)).toEqual([5, 10, 20])
+      expect(state.internalStore.get('$r_count')).toBe(3)
     })
   })
 

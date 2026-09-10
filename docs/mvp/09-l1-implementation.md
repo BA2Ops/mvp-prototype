@@ -154,7 +154,7 @@ MVP 不做这些。
 │  │  - file_read / file_write │ │
 │  │ - glob_match / grep_search │ │
 │  │  - shell_exec / string_replace │ │
-│  │ - sort_by / take_first │ │
+│  │ - evaluate_expr / evaluate_collection │ │
 │  └──────────────────────────────────────────┘ │
 │  ┌──────────────────────────────────────────┐ │
 │  │ Extension Ops (动态加载) │ │
@@ -852,8 +852,8 @@ export async function loadBuiltinOps(runtime: L1Runtime): Promise<void> {
     import('./operations/grep_search.js'),
     import('./operations/shell_exec.js'),
     import('./operations/string_replace.js'),
-    import('./operations/sort_by.js'),
-    import('./operations/take_first.js')
+    import('./operations/evaluate_expr.js'),
+    import('./operations/evaluate_collection.js')
   ])
 
   runtime.registerOperations([
@@ -1127,18 +1127,17 @@ export function compileReadLatestLog(
   state: ExecutionState              // ← 提供 allocator
 ): StackEntry[] {
   const globMatch = registry.get('glob_match')!
-  const sortBy = registry.get('sort_by')!
-  const takeFirst = registry.get('take_first')!
+  const evaluateCollection = registry.get('evaluate_collection')!
   const fileRead = registry.get('file_read')!
 
   // 编译期检查：所有 required inputs 必须有值
   //   globMatch.formalSpec.inputs.pattern.required === true ✓
-  //   sortBy.formalSpec.inputs.by.required === true ✓
+  //   evaluateCollection.formalSpec.inputs.expr.required === true ✓
 
   // 从 allocator 分配寄存器
   const r0 = state.allocator.allocate()  // '$r0' (glob pattern)
   const r1 = state.allocator.allocate()  // '$r1' (logs)
-  const r2 = state.allocator.allocate()  // '$r2' (sorted)
+  const r2 = state.allocator.allocate()  // '$r2' (collection expr)
   const r3 = state.allocator.allocate()  // '$r3' (latest)
   const r4 = state.allocator.allocate()  // '$r4' (content)
   const rErr = state.allocator.errorRegister()  // '$r_err'
@@ -1156,26 +1155,33 @@ export function compileReadLatestLog(
       outputs: { matches: { kind: 'internal', name: r1 } },
       status: 'pending' },
 
-    // 3. execute_op sort_by ($r1, literals → $r2)
-    { kind: 'execute_op', id: 'op2', parentIntentId: intent.id, createdAt: Date.now(),
-      operation: 'sort_by',
-      inputs: {
-        items: { kind: 'internal', name: r1 },
-        by: { kind: 'literal', value: 'mtime' },  // ⚠️ literal 必须先 move 到 internal
-        desc: { kind: 'literal', value: true }
-      },
-      outputs: { sorted: { kind: 'internal', name: r2 } },
-      status: 'pending' },
+    // 3. move literal(collection expr) → $r2
+    { kind: 'move', id: 'm2', parentIntentId: intent.id, createdAt: Date.now(),
+      from: { kind: 'literal', value: {
+        type: 'pipe',
+        source: { type: 'var', name: 'items' },
+        stages: [
+          { op: 'sort', args: [
+            { type: 'literal', value: 'mtime' },
+            { type: 'literal', value: true }
+          ]},
+          { op: 'take', args: [{ type: 'literal', value: 1 }] }
+        ]
+      }},
+      to: { kind: 'internal', name: r2 } },
 
-    // 4. execute_op take_first ($r2 → $r3)
-    { kind: 'execute_op', id: 'op3', parentIntentId: intent.id, createdAt: Date.now(),
-      operation: 'take_first',
-      inputs: { items: { kind: 'internal', name: r2 } },
-      outputs: { taken: { kind: 'internal', name: r3 } },
+    // 4. execute_op evaluate_collection ($r1, $r2 → $r3)
+    { kind: 'execute_op', id: 'op2', parentIntentId: intent.id, createdAt: Date.now(),
+      operation: 'evaluate_collection',
+      inputs: {
+        expr: { kind: 'internal', name: r2 },
+        env: { kind: 'literal', value: { items: r1 } }
+      },
+      outputs: { result: { kind: 'internal', name: r3 } },
       status: 'pending' },
 
     // 5. execute_op file_read ($r3 → $r4, $r_err)
-    { kind: 'execute_op', id: 'op4', parentIntentId: intent.id, createdAt: Date.now(),
+    { kind: 'execute_op', id: 'op3', parentIntentId: intent.id, createdAt: Date.now(),
       operation: 'file_read',
       inputs: { path: { kind: 'internal', name: r3 } },
       outputs: { content: { kind: 'internal', name: r4 }, error: { kind: 'internal', name: rErr } },
@@ -1444,8 +1450,8 @@ src/
 │       ├── grep_search.ts
 │       ├── shell_exec.ts
 │       ├── string_replace.ts
-│       ├── sort_by.ts
-│       └── take_first.ts
+│       ├── evaluate_expr.ts
+│       └── evaluate_collection.ts
 ├── l3/                          # L3 编译器模块（双区架构）
 │   ├── service.ts               # L3Service 接口 + compile(intent, state)
 │   ├── compiler.ts              # StandardIntent → StackEntry[]

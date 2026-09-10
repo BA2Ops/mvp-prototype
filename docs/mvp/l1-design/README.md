@@ -11,7 +11,7 @@ L1（执行层调度器）的**落地后现状**权威描述，独立于 [06-exe
 
 | 计划编号 | 主题 | 说明 |
 |---|---|---|
-| （并入 [`02-instructions/`](./02-instructions/)）剩余部分 | L2 builtin operation 全集逐条参考 | file_read/file_write/string_replace/shell_exec/glob_match/grep_search/evaluate_expr/increment_counter/decrement_counter/sort_by/take_first 逐个列出 formalSpec(inputs/outputs businessName+slotIndex)，与 `scripts/dump-formal-spec.ts` 输出对齐，避免手维护漂移；5 primitive 自身部分已在上面的文件夹内完成，待补的是各 op 的字段级清单 |
+| （并入 [`02-instructions/`](./02-instructions/)）剩余部分 | L2 builtin operation 全集逐条参考 | file_read/file_write/string_replace/shell_exec/glob_match/grep_search/evaluate_expr/evaluate_collection/increment_counter/decrement_counter 逐个列出 formalSpec(inputs/outputs businessName+slotIndex)，与 `scripts/dump-formal-spec.ts` 输出对齐，避免手维护漂移；5 primitive 自身部分已在上面的文件夹内完成，待补的是各 op 的字段级清单 |
 | `03-register-file.md` | CRR 落地后的寄存器架构现状 | FrameScopeAllocator / scope prefixing (`$S<scope>.in<k>`/`out<k>`) / `$err`·`$path` 全局功能寄存器 / publicStore persist channel / feature flag `useFixedSlotConvention` 当前默认值与 P4 删除计划。与 [../19b-register-design.md](../19b-register-design.md)（设计稿）互为「设计 vs. 实现」对照 |
 | `04-error-handling.md` | 异常冒泡 + handleError 处置权在 L3 | bubbleError/abortFrame 对称性约束(R-1)、DAG catch 逻辑、OperationError 结构 |
 

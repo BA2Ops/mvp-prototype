@@ -26,7 +26,7 @@ import { fileWriteOp } from '../../src/l2/builtins/file-write.js'
 import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
 import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
-import { takeFirstOp } from '../../src/l2/builtins/take-first.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 
 // ============== 测试经验库 ==============
 
@@ -162,7 +162,6 @@ function mkRegistry(): L2Registry {
   r.register(fileWriteOp)
   r.register(evaluateExprOp); r.register(evaluateCollectionOp)
   r.register(incrementCounterOp)
-  r.register(takeFirstOp)
   return r
 }
 

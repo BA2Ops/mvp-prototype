@@ -553,13 +553,13 @@ Phase E: L4 + E2E（2 个 tier，端到端）
   2. **整合** extract_error_code 到 evaluate_expr（作为 `error_code` 操作符）
   3. **不实现** lambda（MVP 不需要）
   4. **新增** 位运算操作符（& | ^ ~ << >> >>>）
-  5. **保留** sort_by / take_first（作为高层 API，调用更直观）
+  5. **迁移** sort_by / take_first → evaluate_collection 集合运算符(sort/take)
 
 - **重构后**：22 个 op → **10 个 op**（文件4 + 进程1 + 数据处理5 + 表达式1 = 11 个）
   - 文件操作（4）：file_read / file_write / glob_match / grep_search
   - 进程操作（1）：shell_exec
-  - 数据处理（5）：string_replace / sort_by / take_first / increment_counter / decrement_counter
-  - **表达式求值（1）：evaluate_expr**（内置完整 JSON 树形求值器）
+  - 数据处理（4）：string_replace / increment_counter / decrement_counter
+  - **表达式求值（2）：evaluate_expr + evaluate_collection**（内置完整 JSON 树形求值器）
 
 - **DAG 简化**：编译 `if code == 'ENOENT' and not empty(items)` 从 5-6 个 execute_op 减少为 **1 个 execute_op(evaluate_expr)**。L3 编译器职责从"组合原子 op"变为"构造表达式 JSON 树"。
 
@@ -1146,7 +1146,7 @@ mvp-prototype/
 - ✅ B02：file_write（14 tests）
 - ✅ B03：shell_exec（14 tests）
 - ✅ B04：glob_match + grep_search（16 tests）
-- ✅ B05：string_replace + sort_by + take_first + counter（30 tests）
+- ✅ B05：string_replace + evaluate_collection + counter（原 sort_by/take_first 已迁移）
 - ❌ B06：条件计算 op 族（**已废弃**，原 12 op 删除——详见 dev-log/2026-08-20-evaluate-expr-redesign.md）
 - ✅ B07：evaluate_expr 重构（48 tests）⭐
 

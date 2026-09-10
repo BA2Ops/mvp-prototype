@@ -155,8 +155,7 @@ const rules: CompilationRule[] = [
         args: { pattern: extractLogPattern(intent), recursive: true },
         required_params: ['pattern', 'location']  // location 必填
       },
-      { kind: 'sort_results', args: { by: 'mtime', desc: true }, required_params: [] },
-      { kind: 'take_first', args: {}, required_params: [] },
+      { kind: 'evaluate_collection', args: { expr: 'sort+take' }, required_params: [] },
       { kind: 'read_file', args: { path: '<derived:previous>' }, required_params: ['path'] }
     ]
   }

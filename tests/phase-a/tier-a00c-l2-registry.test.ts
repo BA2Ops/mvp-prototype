@@ -121,7 +121,7 @@ describe('A0c: L2Registry', () => {
     test('MVP 内置 8 个 op 注册', () => {
       const ops = [
         'file_read', 'file_write', 'glob_match', 'grep_search',
-        'shell_exec', 'string_replace', 'sort_by', 'take_first'
+        'shell_exec', 'string_replace', 'evaluate_expr', 'evaluate_collection'
       ]
 
       for (const name of ops) {
