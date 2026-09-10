@@ -19,14 +19,18 @@ const nodeColor: Record<string, string> = {
   op: '#3b82f6',
   experience: '#10b981',
   condition: '#f59e0b',
-  terminal: '#94a3b8'
+  terminal: '#94a3b8',
+  start: '#8b5cf6',
+  end: '#ec4899'
 }
 
 const nodeLabel: Record<string, string> = {
   op: 'OP',
   experience: 'EXP',
   condition: 'COND',
-  terminal: 'END'
+  terminal: 'END',
+  start: 'START',
+  end: 'END'
 }
 
 const edgeStyle: Record<string, { stroke: string; labelColor: string; dashed?: boolean }> = {
@@ -38,6 +42,15 @@ const edgeStyle: Record<string, { stroke: string; labelColor: string; dashed?: b
 // 节点尺寸根据内容动态计算(dagre 布局用估算值,实际渲染用 minHeight 自适应)
 function nodeHeightFor(n: DagNode): number {
   if (n.kind === 'terminal') return 40
+  if (n.kind === 'start') {
+    const inputCount = n.expInputs?.length ?? 0
+    return Math.max(60, 40 + (inputCount > 0 ? 18 + inputCount * 22 : 0))
+  }
+  if (n.kind === 'end') {
+    const bindCount = n.bindings?.length ?? 0
+    const pathLabelH = n.pathLabel ? 18 : 0
+    return Math.max(60, 40 + pathLabelH + (bindCount > 0 ? 18 + bindCount * 22 : 0))
+  }
   if (n.kind === 'condition') return 80
   const inputCount = n.inputs?.length ?? 0
   const outputCount = n.outputs?.length ?? 0
@@ -48,6 +61,7 @@ function nodeHeightFor(n: DagNode): number {
 
 function nodeWidthFor(n: DagNode): number {
   if (n.kind === 'terminal') return 100
+  if (n.kind === 'start' || n.kind === 'end') return 220
   return 260
 }
 
@@ -91,6 +105,52 @@ function layoutWithDagre(
 function NodeLabel({ n }: { n: DagNode }) {
   if (n.kind === 'terminal') {
     return <div className="text-center text-xs text-gray-500">END</div>
+  }
+
+  if (n.kind === 'start') {
+    return (
+      <div className="px-2 py-1 overflow-hidden">
+        <div className="text-center border-b border-gray-200 pb-1 mb-1">
+          <div className="text-xs text-gray-500">START</div>
+        </div>
+        {n.expInputs && n.expInputs.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold text-purple-700 mb-0.5">IN</div>
+            {n.expInputs.map((inp, i) => (
+              <div key={i} className="text-xs text-gray-700 font-mono leading-snug break-words">
+                <span className="text-purple-600">▸</span> {inp.name}
+                <span className="text-gray-400">:</span> {inp.type}
+                {inp.required && <span className="text-red-500">*</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (n.kind === 'end') {
+    return (
+      <div className="px-2 py-1 overflow-hidden">
+        <div className="text-center border-b border-gray-200 pb-1 mb-1">
+          <div className="text-xs text-gray-500">END</div>
+          {n.pathLabel && (
+            <div className="text-xs text-gray-600 font-mono truncate">{n.pathLabel}</div>
+          )}
+        </div>
+        {n.bindings && n.bindings.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold text-pink-700 mb-0.5">OUT</div>
+            {n.bindings.map((b, i) => (
+              <div key={i} className="text-xs text-gray-700 font-mono leading-snug break-words">
+                <span className="text-pink-600">◂</span> {b.name}
+                <span className="text-gray-400"> ←</span> {b.fromNode}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   const subTitle = n.kind === 'op'
@@ -152,7 +212,7 @@ function DagViewInner({ xmlExp }: { xmlExp: XmlExperience }) {
         position: pos,
         data: { label: <NodeLabel n={n} /> },
         style: {
-          border: `2px solid ${nodeColor[n.kind]}`,
+          border: `2px ${n.kind === 'start' || n.kind === 'end' || n.kind === 'terminal' ? 'dashed' : 'solid'} ${nodeColor[n.kind]}`,
           borderRadius: '8px',
           background: '#fff',
           width: `${w}px`,
