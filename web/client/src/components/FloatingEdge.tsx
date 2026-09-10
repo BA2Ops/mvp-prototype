@@ -91,6 +91,7 @@ export interface FloatingEdgeData {
   stroke: string
   dashed?: boolean
   labelColor: string
+  offset?: number  // 双向边分离偏移(正/负),0 表示无偏移
 }
 
 export default function FloatingEdge({
@@ -113,15 +114,33 @@ export default function FloatingEdge({
   const stroke = edgeData?.stroke ?? '#6366f1'
   const dashed = edgeData?.dashed
   const labelColor = edgeData?.labelColor ?? stroke
+  const offset = edgeData?.offset ?? 0
 
   const params = getEdgeParams(sourceNode, targetNode)
 
+  // 双向边偏移:沿垂直于主轴方向平移连接点,使平行曲线分离
+  const OFFSET_PX = 20
+  let sx = params.sx
+  let sy = params.sy
+  let tx = params.tx
+  let ty = params.ty
+  if (offset !== 0) {
+    const isHorizontal = params.sourcePos === Position.Left || params.sourcePos === Position.Right
+    if (isHorizontal) {
+      sy += offset * OFFSET_PX
+      ty += offset * OFFSET_PX
+    } else {
+      sx += offset * OFFSET_PX
+      tx += offset * OFFSET_PX
+    }
+  }
+
   const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX: params.sx,
-    sourceY: params.sy,
+    sourceX: sx,
+    sourceY: sy,
     sourcePosition: params.sourcePos,
-    targetX: params.tx,
-    targetY: params.ty,
+    targetX: tx,
+    targetY: ty,
     targetPosition: params.targetPos
   })
 

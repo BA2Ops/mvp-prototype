@@ -224,12 +224,28 @@ function DagViewInner({ xmlExp }: { xmlExp: XmlExperience }) {
   }, [nodes, edges])
 
   const initialEdges = useMemo<Edge[]>(() => {
+    // 检测双向边对:A→B 和 B→A 同时存在时,分配 offset 使两边分离
+    const offsetMap = new Map<string, number>()
+    for (let i = 0; i < edges.length; i++) {
+      const e = edges[i]
+      const key = `${e.from}->${e.to}`
+      if (offsetMap.has(key)) continue
+      const reverseKey = `${e.to}->${e.from}`
+      const hasReverse = edges.some((r, j) => j !== i && r.from === e.to && r.to === e.from)
+      if (hasReverse) {
+        offsetMap.set(key, 1)
+        offsetMap.set(reverseKey, -1)
+      }
+    }
+
     return edges.map((e, i) => {
       const style = edgeStyle[e.kind] ?? edgeStyle.sequence
+      const offset = offsetMap.get(`${e.from}->${e.to}`) ?? 0
       const edgeData: FloatingEdgeData = {
         stroke: style.stroke,
         dashed: style.dashed,
-        labelColor: style.labelColor
+        labelColor: style.labelColor,
+        offset
       }
       return {
         id: `e${i}-${e.from}-${e.to}`,
