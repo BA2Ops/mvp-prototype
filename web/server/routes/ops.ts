@@ -17,6 +17,7 @@ import { globMatchOp } from '../../../src/l2/builtins/glob-match.js'
 import { grepSearchOp } from '../../../src/l2/builtins/grep-search.js'
 import { stringReplaceOp } from '../../../src/l2/builtins/string-replace.js'
 import { evaluateExprOp } from '../../../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../../../src/l2/builtins/decrement-counter.js'
 import { sortByOp } from '../../../src/l2/builtins/sort-by.js'
@@ -34,6 +35,7 @@ function createL2Registry(): L2Registry {
   registry.register(grepSearchOp)
   registry.register(stringReplaceOp)
   registry.register(evaluateExprOp)
+  registry.register(evaluateCollectionOp)
   registry.register(incrementCounterOp)
   registry.register(decrementCounterOp)
   registry.register(sortByOp)

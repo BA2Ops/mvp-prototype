@@ -34,6 +34,7 @@ import { globMatchOp } from '../../src/l2/builtins/glob-match.js'
 import { grepSearchOp } from '../../src/l2/builtins/grep-search.js'
 import { stringReplaceOp } from '../../src/l2/builtins/string-replace.js'
 import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
 
 // ============== 环境 ==============
@@ -136,7 +137,7 @@ function mkEnv(exps: Experience[] = []): { service: ExperienceService; registry:
   registry.register(globMatchOp)
   registry.register(grepSearchOp)
   registry.register(stringReplaceOp)
-  registry.register(evaluateExprOp)
+  registry.register(evaluateExprOp); registry.register(evaluateCollectionOp)
   registry.register(incrementCounterOp)
   const service = new ExperienceService([...CORE_EXPERIENCES, ...D_EXPS, ...exps], registry)
   return { service, registry }

@@ -22,6 +22,7 @@ import { grepSearchOp } from '../src/l2/builtins/grep-search.js'
 import { shellExecOp } from '../src/l2/builtins/shell-exec.js'
 import { stringReplaceOp } from '../src/l2/builtins/string-replace.js'
 import { evaluateExprOp } from '../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../src/l2/builtins/increment-counter.js'
 import { decrementCounterOp } from '../src/l2/builtins/decrement-counter.js'
 import { sortByOp } from '../src/l2/builtins/sort-by.js'
@@ -35,6 +36,7 @@ registry.register(grepSearchOp)
 registry.register(shellExecOp)
 registry.register(stringReplaceOp)
 registry.register(evaluateExprOp)
+registry.register(evaluateCollectionOp)
 registry.register(incrementCounterOp)
 registry.register(decrementCounterOp)
 registry.register(sortByOp)

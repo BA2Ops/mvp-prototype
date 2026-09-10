@@ -143,6 +143,7 @@ export async function registerExperienceRoutes(
       const { grepSearchOp } = await import('../../../src/l2/builtins/grep-search.js')
       const { stringReplaceOp } = await import('../../../src/l2/builtins/string-replace.js')
       const { evaluateExprOp } = await import('../../../src/l2/builtins/evaluate-expr.js')
+      const { evaluateCollectionOp } = await import('../../../src/l2/builtins/evaluate-collection.js')
       const { incrementCounterOp } = await import('../../../src/l2/builtins/increment-counter.js')
       const { decrementCounterOp } = await import('../../../src/l2/builtins/decrement-counter.js')
       const { sortByOp } = await import('../../../src/l2/builtins/sort-by.js')
@@ -151,7 +152,8 @@ export async function registerExperienceRoutes(
       const registry = new L2Registry()
       registry.register(fileReadOp); registry.register(fileWriteOp); registry.register(shellExecOp)
       registry.register(globMatchOp); registry.register(grepSearchOp); registry.register(stringReplaceOp)
-      registry.register(evaluateExprOp); registry.register(incrementCounterOp); registry.register(decrementCounterOp)
+      registry.register(evaluateExprOp); registry.register(evaluateCollectionOp)
+      registry.register(incrementCounterOp); registry.register(decrementCounterOp)
       registry.register(sortByOp); registry.register(takeFirstOp)
 
       const l3 = compileXmlToL3(xmlExp)

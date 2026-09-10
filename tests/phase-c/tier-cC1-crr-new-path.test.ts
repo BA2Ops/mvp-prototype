@@ -23,6 +23,7 @@ import { globMatchOp } from '../../src/l2/builtins/glob-match.js'
 import { grepSearchOp } from '../../src/l2/builtins/grep-search.js'
 import { stringReplaceOp } from '../../src/l2/builtins/string-replace.js'
 import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { enableCrrNewPath, disableCrrNewPath } from '../../src/l1/main-loop.js'
 import { GLOBAL_PATH } from '../../src/l3/crr-config.js'
 
@@ -36,7 +37,7 @@ function mkRegistry(): L2Registry {
   reg.register(globMatchOp)
   reg.register(grepSearchOp)
   reg.register(stringReplaceOp)
-  reg.register(evaluateExprOp)
+  reg.register(evaluateExprOp); reg.register(evaluateCollectionOp)
   return reg
 }
 

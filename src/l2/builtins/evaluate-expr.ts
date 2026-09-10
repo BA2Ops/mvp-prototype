@@ -17,17 +17,19 @@
  * - **动态寄存器读取**：通过 var.name + env 映射读 internal 寄存器
  * - **MVP 不实现**：lambda / in / between
  *
- * 支持的操作符（10 类）：
+ * 支持的操作符（7 类,标量运算专用）：
  * - 算术（6）：+, -, *, /, %, neg
  * - 比较（6）：==, !=, >, <, >=, <=
  * - 逻辑（3）：and, or, not（短路）
  * - 位（8）：&, |, ^, ~, <<, >>, >>>, plus 复合
  * - 字符串（6）：length, slice, concat, regex_match, to_string, to_number
- * - 列表（8）：head, tail, length, map, filter, reduce, concat, contains
  * - 对象（5）：get, has, keys, values, merge
  * - 错误（3）：error_code, error_message, is_error（替代旧 extract_error_code）
  * - 空检查（3）：is_null, is_empty, is_truthy
  * - 类型（1）：typeof
+ *
+ * 注意:列表/集合运算符已迁移到 evaluate_collection op(2026-09-10)
+ * - head/tail/map/filter/reduce/contains/concat 等集合运算符不再在此 op 中
  *
  * 测试：tests/phase-b/tier-b07-evaluate-expr.test.ts
  */
@@ -62,8 +64,6 @@ export type OpName =
   | '&' | '|' | '^' | '~' | '<<' | '>>' | '>>>'
   // 字符串
   | 'length' | 'slice' | 'concat' | 'regex_match' | 'to_string' | 'to_number'
-  // 列表
-  | 'head' | 'tail' | 'map' | 'filter' | 'reduce' | 'contains'
   // 对象
   | 'get' | 'has' | 'keys' | 'values' | 'merge'
   // 错误
@@ -238,14 +238,6 @@ function evalMultiOp(op: OpName, args: Value[], _ctx: EvalContext): Value {
   if (op === 'regex_match') return regexMatch(args)
   if (op === 'to_string') return String(args[0])
   if (op === 'to_number') return toNumberOp(args)
-
-  // 列表
-  if (op === 'head') return headOp(args)
-  if (op === 'tail') return tailOp(args)
-  if (op === 'map') return mapOp(args)
-  if (op === 'filter') return filterOp(args)
-  if (op === 'reduce') return reduceOp(args)
-  if (op === 'contains') return containsOp(args)
 
   // 对象
   if (op === 'get') return getOp(args)
@@ -442,62 +434,6 @@ function toNumberOp(args: Value[]): number {
     throw createOperationError('INVALID_INPUT', `Cannot convert to number: ${String(args[0])}`, 'evaluate_expr')
   }
   return n}
-
-// ============== 列表操作 ==============
-
-function headOp(args: Value[]): Value {
-  if (args.length !== 1 || !Array.isArray(args[0])) {
-
-    /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-    throw createOperationError('INVALID_INPUT', 'head requires list', 'evaluate_expr')
-  }
-  return (args[0] as Value[])[0] ?? null}
-
-function tailOp(args: Value[]): Value[] {
-  if (args.length !== 1 || !Array.isArray(args[0])) {
-
-    /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-    throw createOperationError('INVALID_INPUT', 'tail requires list', 'evaluate_expr')
-  }
-  return (args[0] as Value[]).slice(1)}
-
-function mapOp(args: Value[]): Value[] {
-  if (args.length !== 2) {
-
-    /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-    throw createOperationError('INVALID_INPUT', 'map requires (list, items, fn)', 'evaluate_expr')
-  }
-  // 注意：fn 是 Expr，不能在 evaluate 阶段求值
-  // MVP 简化：map 不支持内联 fn（需要在 L3 编译时展开）
-  // 这里只支持"提取字段"模式：map(list, 'fieldName')
-
-  /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-  throw createOperationError('UNSUPPORTED', 'map with fn requires L3 compiler expansion (MVP)', 'evaluate_expr')}
-
-function filterOp(args: Value[]): Value[] {
-  // 同 map，filter 也需要 L3 编译器展开
-
-  /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-  throw createOperationError('UNSUPPORTED', 'filter requires L3 compiler expansion (MVP)', 'evaluate_expr')}
-
-function reduceOp(args: Value[]): Value {
-
-  /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-  throw createOperationError('UNSUPPORTED', 'reduce requires L3 compiler expansion (MVP)', 'evaluate_expr')}
-
-function containsOp(args: Value[]): boolean {
-  if (args.length !== 2) {
-
-    /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-    throw createOperationError('INVALID_INPUT', 'contains requires (list, value)', 'evaluate_expr')
-  }
-  const [list, value] = args
-  if (!Array.isArray(list)) {
-
-    /* v8 ignore next 5 -- 防御代码：参数校验/未知 op 防御（用户构造非法 AST 时触发） */
-    throw createOperationError('INVALID_INPUT', 'contains 1st arg must be list', 'evaluate_expr')
-  }
-  return (list as Value[]).some(v => v === value)}
 
 // ============== 对象操作 ==============
 

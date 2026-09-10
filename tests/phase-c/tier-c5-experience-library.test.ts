@@ -23,6 +23,7 @@ import { globMatchOp } from '../../src/l2/builtins/glob-match.js'
 import { grepSearchOp } from '../../src/l2/builtins/grep-search.js'
 import { stringReplaceOp } from '../../src/l2/builtins/string-replace.js'
 import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 
 // ============== 测试环境 ==============
 
@@ -44,7 +45,7 @@ function mkEnv(): { service: ExperienceService; registry: L2Registry } {
   registry.register(globMatchOp)
   registry.register(grepSearchOp)
   registry.register(stringReplaceOp)
-  registry.register(evaluateExprOp)
+  registry.register(evaluateExprOp); registry.register(evaluateCollectionOp)
   return { service: new ExperienceService(CORE_EXPERIENCES, registry), registry }
 }
 

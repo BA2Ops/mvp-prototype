@@ -210,19 +210,11 @@ describe('B07: evaluate_expr', () => {
     })
   })
 
-  describe('列表', () => {
-    test('head / tail', async () => {
-      expect((await evalExpr({ type: 'op', name: 'head', args: [{ type: 'literal', value: [1, 2, 3] }] })).result).toBe(1)
-      expect((await evalExpr({ type: 'op', name: 'tail', args: [{ type: 'literal', value: [1, 2, 3] }] })).result).toEqual([2, 3])
-    })
+  describe('列表(已迁移到 evaluate_collection,evaluate_expr 仅保留 length)', () => {
     test('length 列表', async () => {
       expect((await evalExpr({ type: 'op', name: 'length', args: [{ type: 'literal', value: [1, 2, 3] }] })).result).toBe(3)
     })
-    test('contains', async () => {
-      expect((await evalExpr({ type: 'op', name: 'contains', args: [
-        { type: 'literal', value: [1, 2, 3] }, { type: 'literal', value: 2 }] })).result).toBe(true)
-    })
-    test('concat 列表', async () => {
+    test('concat 列表(字符串 concat 保留,列表 concat 已迁移)', async () => {
       const r = await evalExpr({ type: 'op', name: 'concat', args: [
         { type: 'literal', value: [1, 2] }, { type: 'literal', value: [3, 4] }] })
       expect(r.result).toEqual([1, 2, 3, 4])

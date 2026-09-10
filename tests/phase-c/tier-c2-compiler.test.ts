@@ -24,6 +24,7 @@ import type { StackEntry } from '../../src/l1/types.js'
 import { fileReadOp } from '../../src/l2/builtins/file-read.js'
 import { fileWriteOp } from '../../src/l2/builtins/file-write.js'
 import { evaluateExprOp } from '../../src/l2/builtins/evaluate-expr.js'
+import { evaluateCollectionOp } from '../../src/l2/builtins/evaluate-collection.js'
 import { incrementCounterOp } from '../../src/l2/builtins/increment-counter.js'
 import { takeFirstOp } from '../../src/l2/builtins/take-first.js'
 
@@ -159,7 +160,7 @@ function mkRegistry(): L2Registry {
   const r = new L2Registry()
   r.register(fileReadOp)
   r.register(fileWriteOp)
-  r.register(evaluateExprOp)
+  r.register(evaluateExprOp); r.register(evaluateCollectionOp)
   r.register(incrementCounterOp)
   r.register(takeFirstOp)
   return r

@@ -67,10 +67,11 @@ function describeSource(src: { kind: string; inputName?: string; nodeId?: string
  * - op → name(arg1, arg2, ...)
  * - var → nodeId.outputName(解析业务变量名到节点输出引用)或变量名
  * - literal → JSON 值
+ * - pipe → source |> stage1 |> stage2(管道语义,evaluate_collection 专用)
  */
 function exprToString(expr: unknown, varToNodeOutput: Map<string, string>): string {
   if (expr === null || typeof expr !== 'object') return String(expr)
-  const e = expr as { type: string; name?: string; value?: unknown; args?: unknown[] }
+  const e = expr as { type: string; name?: string; value?: unknown; args?: unknown[]; source?: unknown; stages?: unknown[] }
   if (e.type === 'literal') {
     const v = e.value
     if (typeof v === 'string') return `"${v}"`
@@ -83,6 +84,16 @@ function exprToString(expr: unknown, varToNodeOutput: Map<string, string>): stri
   if (e.type === 'op') {
     const args = (e.args ?? []).map(a => exprToString(a, varToNodeOutput)).join(', ')
     return `${e.name}(${args})`
+  }
+  if (e.type === 'pipe') {
+    // 管道:source |> stage1 |> stage2
+    const source = exprToString(e.source, varToNodeOutput)
+    const stages = (e.stages ?? []).map((s: unknown) => {
+      const stage = s as { op?: string; args?: unknown[] }
+      const args = (stage.args ?? []).map(a => exprToString(a, varToNodeOutput)).join(', ')
+      return `${stage.op}(${args})`
+    })
+    return [source, ...stages].join(' |> ')
   }
   return JSON.stringify(expr)
 }
