@@ -20,6 +20,7 @@ import { FileSystemExperienceStore } from './services/experience-store.js'
 import { SearchService } from './services/search-service.js'
 import { registerExperienceRoutes } from './routes/experiences.js'
 import { registerSearchRoutes } from './routes/search.js'
+import { registerOpRoutes } from './routes/ops.js'
 
 // ============== 启动函数 ==============
 
@@ -44,6 +45,7 @@ export async function createServer(options: ServerOptions = {}) {
   // 路由
   await registerExperienceRoutes(app, { store, search })
   await registerSearchRoutes(app, search)
+  await registerOpRoutes(app)
 
   // 健康检查
   app.get('/api/health', async (_req, reply) => {

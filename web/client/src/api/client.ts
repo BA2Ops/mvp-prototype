@@ -66,6 +66,36 @@ export interface SearchResponse {
   query: string
 }
 
+export interface OpParamSummary {
+  businessName: string
+  type: string
+  required: boolean
+  description?: string
+}
+
+export interface OpSummary {
+  name: string
+  description: string
+  inputs: OpParamSummary[]
+  outputs: OpParamSummary[]
+}
+
+export interface OpFormalParam {
+  businessName: string
+  register: string
+  slotIndex: number
+  type: string
+  required: boolean
+  description?: string
+}
+
+export interface OpDetail {
+  name: string
+  description: string
+  inputs: Record<string, OpFormalParam>
+  outputs: Record<string, OpFormalParam>
+}
+
 // ============== API ==============
 
 export const api = {
@@ -86,6 +116,12 @@ export const api = {
 
   search: (q: string, k: number = 20) =>
     fetchJson<SearchResponse>(`/search?q=${encodeURIComponent(q)}&k=${k}`),
+
+  listOps: () =>
+    fetchJson<{ ops: OpSummary[]; total: number }>('/ops'),
+
+  getOp: (name: string) =>
+    fetchJson<OpDetail>(`/ops/${name}`),
 
   updateMetadata: (id: string, metadata: Partial<ExperienceSummary> & { status?: 'draft' | 'active' }) =>
     putJson<{ metadata: unknown }>(`/experiences/${id}/metadata`, metadata)
